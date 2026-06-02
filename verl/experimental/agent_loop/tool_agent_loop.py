@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from enum import Enum
 from typing import Any, Optional
 from uuid import uuid4
@@ -86,6 +87,12 @@ class AgentData:
         self.tool_rewards: list[float] = []
         self.user_turns = 0
         self.assistant_turns = 0
+
+        # Per-turn timing for fine-grained rollout profiling. One entry is
+        # appended to per_turn_decode for every assistant generation, and one to
+        # per_turn_tool for every turn that triggers a tool call.
+        self.per_turn_decode: list[float] = []
+        self.per_turn_tool: list[float] = []
 
         # Temporary state for tool calls
         self.tool_calls: list[FunctionCall] = []
@@ -184,6 +191,15 @@ class ToolAgentLoop(AgentLoopBase):
         if agent_data.audio_data is not None:
             multi_modal_data["audios"] = agent_data.audio_data
 
+        # Per-turn total = each turn's decode plus the tool call that follows it
+        # (the final turn typically has no tool call, contributing decode only).
+        agent_data.metrics["per_turn_decode"] = agent_data.per_turn_decode
+        agent_data.metrics["per_turn_tool"] = agent_data.per_turn_tool
+        agent_data.metrics["per_turn_total"] = [
+            decode + (agent_data.per_turn_tool[i] if i < len(agent_data.per_turn_tool) else 0.0)
+            for i, decode in enumerate(agent_data.per_turn_decode)
+        ]
+
         output: AgentLoopOutput = AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids[: self.response_length],
@@ -228,6 +244,7 @@ class ToolAgentLoop(AgentLoopBase):
             stop_token_ids = list(set((sampling_params.get("stop_token_ids") or []) + self.tool_parser.stop_token_ids))
             sampling_params = {**sampling_params, "stop_token_ids": stop_token_ids}
 
+        _decode_start = time.perf_counter()
         with simple_timer("generate_sequences", agent_data.metrics):
             output: TokenOutput = await self.server_manager.generate(
                 request_id=agent_data.request_id,
@@ -238,6 +255,7 @@ class ToolAgentLoop(AgentLoopBase):
                 audio_data=agent_data.audio_data,
                 mm_processor_kwargs=agent_data.mm_processor_kwargs,
             )
+        agent_data.per_turn_decode.append(time.perf_counter() - _decode_start)
         # first time to set num_preempted
         if agent_data.metrics.get("num_preempted") is None:
             agent_data.metrics["num_preempted"] = output.num_preempted if output.num_preempted is not None else -1
@@ -295,8 +313,10 @@ class ToolAgentLoop(AgentLoopBase):
             tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
             tool_call_names.append(tool_call.name)
 
+        _tool_start = time.perf_counter()
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
+        agent_data.per_turn_tool.append(time.perf_counter() - _tool_start)
 
         # Process tool responses and update multi_modal_data
         # Removed: agent_data.new_images_this_turn = []

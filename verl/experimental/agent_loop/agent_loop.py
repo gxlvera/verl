@@ -83,6 +83,12 @@ class AgentLoopMetrics(BaseModel):
     tool_calls: float = 0.0
     compute_score: float = 0.0
     num_preempted: int = -1  # -1 means not available
+    # Per-turn timing for a single trajectory (one entry per assistant turn).
+    # Used for fine-grained rollout profiling; empty for agent loops that don't
+    # record them (e.g. single_turn_agent).
+    per_turn_decode: list[float] = []  # target-model decode wall-clock per turn
+    per_turn_tool: list[float] = []  # tool-execution wall-clock per turn (turns with a tool call)
+    per_turn_total: list[float] = []  # decode + following tool call per turn
 
 
 class AgentLoopOutput(BaseModel):
@@ -1142,6 +1148,32 @@ class AgentLoopManager:
         timing["agent_loop/compute_score/min"] = t_compute_score.min()
         timing["agent_loop/compute_score/max"] = t_compute_score.max()
         timing["agent_loop/compute_score/mean"] = t_compute_score.mean()
+
+        # Per-prompt rollout duration: decode + tool execution per prompt (reward
+        # scoring excluded). Reported across the batch so the mean complements the
+        # existing slowest-sample view.
+        t_per_prompt_rollout = t_generate_sequences + t_tool_calls
+        timing["agent_loop/per_prompt_rollout/min"] = t_per_prompt_rollout.min()
+        timing["agent_loop/per_prompt_rollout/max"] = t_per_prompt_rollout.max()
+        timing["agent_loop/per_prompt_rollout/mean"] = t_per_prompt_rollout.mean()
+
+        # Per-turn timing: flatten every turn across every sample in the batch and
+        # report the distribution. Empty for agent loops that don't record them.
+        for tag in ("per_turn_decode", "per_turn_tool", "per_turn_total"):
+            values = [v for chunk in metrics for metric in chunk for v in (metric.get(tag) or [])]
+            if values:
+                arr = np.asarray(values, dtype=np.float64)
+                timing[f"agent_loop/{tag}/min"] = arr.min()
+                timing[f"agent_loop/{tag}/max"] = arr.max()
+                timing[f"agent_loop/{tag}/mean"] = arr.mean()
+
+        # Number of turns per prompt (mirrored into the agent_loop namespace; also
+        # available as num_turns/{min,max,mean} from the data metrics).
+        if "__num_turns__" in output.non_tensor_batch:
+            num_turns = np.asarray(output.non_tensor_batch["__num_turns__"], dtype=np.float64)
+            timing["agent_loop/num_turns/min"] = num_turns.min()
+            timing["agent_loop/num_turns/max"] = num_turns.max()
+            timing["agent_loop/num_turns/mean"] = num_turns.mean()
 
         # batch sequence generation is bounded by the slowest sample
         slowest = np.argmax(t_generate_sequences + t_tool_calls + t_compute_score)
