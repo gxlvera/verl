@@ -28,6 +28,7 @@ and is designed to be fully replaceable by other agent frameworks such as:
 """
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -1247,6 +1248,9 @@ class AgentLoopManager:
         Returns:
             DataProto: Output batch.
         """
+        if self._partial_async_enabled(prompts):
+            return await self._generate_sequences_partial_async(prompts)
+
         prompts.meta_info["mock_batch_start_time"] = time.time()
         chunkes = prompts.chunk(len(self.agent_loop_workers))
         outputs = await asyncio.gather(
@@ -1262,6 +1266,270 @@ class AgentLoopManager:
         timing = self._performance_metrics(metrics, output)
 
         output.meta_info = {"timing": timing, **outputs[0].meta_info}
+        return output
+
+    def _partial_async_enabled(self, prompts: DataProto) -> bool:
+        if prompts.meta_info.get("validate", False):
+            return False
+        mode = os.getenv("GSM8K_AGENT_LOOP_MODE", os.getenv("AGENT_LOOP_MODE", "")).strip().lower()
+        enabled = mode == "partial_async" or os.getenv("GSM8K_PARTIAL_ASYNC", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if not enabled:
+            return False
+        # Step 1 is warmup by default for this experiment; benchmarks can set
+        # PARTIAL_ASYNC_WARMUP_STEPS=0 when every step should emit boundaries.
+        try:
+            global_steps = int(prompts.meta_info.get("global_steps", -1))
+        except (TypeError, ValueError):
+            global_steps = -1
+        try:
+            warmup_steps = int(os.getenv("PARTIAL_ASYNC_WARMUP_STEPS", "1"))
+        except ValueError:
+            warmup_steps = 1
+        if global_steps <= warmup_steps:
+            return False
+        default_agent = self.rollout_config.agent.default_agent_loop
+        if default_agent != "tool_agent":
+            return False
+        return True
+
+    def _partial_async_jsonl_path(self) -> str:
+        configured = os.getenv("PARTIAL_ASYNC_JSONL", "").strip()
+        if configured:
+            return configured
+        log_root = os.getenv("LOG_ROOT", "/root/logs")
+        experiment_name = os.getenv("EXPERIMENT_NAME", "partial_async")
+        return os.path.join(log_root, f"{experiment_name}_partial_async.jsonl")
+
+    async def _generate_one_sequence_on_worker(
+        self,
+        worker_idx: int,
+        sample: DataProto,
+    ) -> DataProto:
+        worker = self.agent_loop_workers[worker_idx % len(self.agent_loop_workers)]
+        return await worker.generate_sequences.remote(sample)
+
+    async def _generate_sequences_partial_async(self, prompts: DataProto) -> DataProto:
+        """Run a GSM8K-only partial async rollout experiment.
+
+        The first start_t=0 wave is returned for training. Extra waves are only
+        used to keep SGLang busy and to log completion-boundary timestamps.
+        """
+        num_starts = int(os.getenv("PARTIAL_ASYNC_NUM_STARTS", "5"))
+        if num_starts <= 0:
+            raise ValueError("PARTIAL_ASYNC_NUM_STARTS must be positive.")
+
+        initial_size = len(prompts)
+        rollout_n = int(getattr(self.rollout_config, "n", 1) or 1)
+        if rollout_n <= 0:
+            raise ValueError("rollout.n must be positive for partial_async.")
+        if initial_size % rollout_n != 0:
+            raise ValueError(
+                f"partial_async group boundary mode expects initial batch size divisible by rollout.n; "
+                f"got initial_size={initial_size}, rollout_n={rollout_n}."
+            )
+        initial_group_count = initial_size // rollout_n
+        threshold_env = os.getenv("PARTIAL_ASYNC_THRESHOLD", "").strip()
+        threshold_groups = int(threshold_env) if threshold_env else initial_group_count // 2
+        if threshold_groups <= 0:
+            raise ValueError("PARTIAL_ASYNC_THRESHOLD must be positive.")
+        if threshold_groups > initial_group_count:
+            raise ValueError(
+                f"PARTIAL_ASYNC_THRESHOLD must be <= initial group count; "
+                f"got {threshold_groups} > {initial_group_count}."
+            )
+        step = int(prompts.meta_info.get("global_steps", -1))
+        step_epoch_s = time.time()
+        step_perf_s = time.perf_counter()
+        jsonl_path = self._partial_async_jsonl_path()
+
+        active: dict[asyncio.Task, dict[str, Any]] = {}
+        completed_groups: list[list[tuple[DataProto, dict[str, Any]]]] = []
+        pending_by_group: dict[tuple[int, int], list[tuple[DataProto, dict[str, Any]]]] = {}
+        boundary_events: list[dict[str, Any]] = []
+        sample_records: list[dict[str, Any]] = []
+        train_outputs: dict[int, DataProto] = {}
+        sample_seq = 0
+        next_worker_idx = 0
+        next_extra_source_idx = 0
+        next_start_t = 1
+        end_t = 0
+
+        def relative_s() -> float:
+            return time.perf_counter() - step_perf_s
+
+        def annotate_output(output: DataProto, record: dict[str, Any]) -> None:
+            output.non_tensor_batch["partial_async_sample_id"] = np.array([record["sample_id"]], dtype=object)
+            output.non_tensor_batch["partial_async_source_index"] = np.array([record["source_index"]], dtype=np.int32)
+            output.non_tensor_batch["partial_async_group_id"] = np.array([record["group_id"]], dtype=np.int32)
+            output.non_tensor_batch["partial_async_rollout_index"] = np.array(
+                [record["rollout_index"]], dtype=np.int32
+            )
+            output.non_tensor_batch["partial_async_start_t"] = np.array([record["start_t"]], dtype=np.int32)
+            output.non_tensor_batch["partial_async_end_t"] = np.array([record["end_t"]], dtype=np.int32)
+            output.non_tensor_batch["partial_async_is_train"] = np.array([record["is_train"]], dtype=bool)
+
+        def record_output_stats(output: DataProto, record: dict[str, Any]) -> None:
+            if "response_mask" in output.batch:
+                record["response_length"] = int(output.batch["response_mask"].sum().detach().cpu().item())
+            if "__num_turns__" in output.non_tensor_batch:
+                record["num_turns"] = int(output.non_tensor_batch["__num_turns__"][0])
+            if "tool_call_counts" in output.non_tensor_batch:
+                record["tool_call_count"] = int(output.non_tensor_batch["tool_call_counts"][0])
+
+        def submit_sample(source_index: int, start_t: int, is_train: bool) -> None:
+            nonlocal sample_seq, next_worker_idx
+            group_id = source_index // rollout_n
+            rollout_index = source_index % rollout_n
+            sample = prompts.slice(source_index, source_index + 1)
+            sample.meta_info = dict(sample.meta_info)
+            sample.meta_info["mock_batch_start_time"] = step_epoch_s
+            sample.meta_info["partial_async_start_t"] = start_t
+            sample.meta_info["partial_async_sample_id"] = sample_seq
+            task = asyncio.create_task(self._generate_one_sequence_on_worker(next_worker_idx, sample))
+            active[task] = {
+                "sample_id": sample_seq,
+                "source_index": source_index,
+                "group_id": group_id,
+                "rollout_index": rollout_index,
+                "start_t": start_t,
+                "is_train": bool(is_train),
+                "submit_relative_s": relative_s(),
+                "submit_epoch_s": time.time(),
+                "worker_idx": next_worker_idx % len(self.agent_loop_workers),
+            }
+            sample_seq += 1
+            next_worker_idx += 1
+
+        def launch_extra_wave(start_t: int) -> None:
+            nonlocal next_extra_source_idx
+            for _ in range(threshold_groups):
+                group_id = next_extra_source_idx % initial_group_count
+                next_extra_source_idx += 1
+                for rollout_index in range(rollout_n):
+                    source_index = group_id * rollout_n + rollout_index
+                    submit_sample(source_index=source_index, start_t=start_t, is_train=False)
+
+        def close_boundary(final: bool = False) -> None:
+            nonlocal end_t, next_start_t
+            if not completed_groups:
+                return
+            end_t += 1
+            group_count = len(completed_groups) if final else threshold_groups
+            groups = completed_groups[:group_count]
+            del completed_groups[:group_count]
+            group = [item for completed_group in groups for item in completed_group]
+            count = len(group)
+            boundary_relative_s = relative_s()
+            boundary_epoch_s = time.time()
+            for output, record in group:
+                record["end_t"] = end_t
+                record["boundary_relative_s"] = boundary_relative_s
+                record["boundary_epoch_s"] = boundary_epoch_s
+                record_output_stats(output, record)
+                annotate_output(output, record)
+                sample_records.append(record)
+                if record["is_train"]:
+                    train_outputs[record["source_index"]] = output
+
+            boundary_events.append(
+                {
+                    "end_t": end_t,
+                    "count": count,
+                    "group_count": group_count,
+                    "relative_s": boundary_relative_s,
+                    "epoch_s": boundary_epoch_s,
+                    "launch_next_start_t": next_start_t if next_start_t < num_starts and not final else None,
+                }
+            )
+            if not final and next_start_t < num_starts:
+                launch_extra_wave(next_start_t)
+                next_start_t += 1
+
+        for i in range(initial_size):
+            submit_sample(source_index=i, start_t=0, is_train=True)
+
+        while active:
+            done, _pending = await asyncio.wait(active.keys(), return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                record = active.pop(task)
+                record["complete_relative_s"] = relative_s()
+                record["complete_epoch_s"] = time.time()
+                output = task.result()
+                group_key = (record["start_t"], record["group_id"])
+                pending_group = pending_by_group.setdefault(group_key, [])
+                pending_group.append((output, record))
+                if len(pending_group) == rollout_n:
+                    completed_groups.append(pending_by_group.pop(group_key))
+            while len(completed_groups) >= threshold_groups:
+                close_boundary(final=False)
+
+        if completed_groups:
+            close_boundary(final=True)
+        if pending_by_group:
+            raise RuntimeError(f"partial_async has incomplete groups after all tasks completed: {list(pending_by_group)}")
+
+        if len(train_outputs) != initial_size:
+            raise RuntimeError(
+                f"partial_async expected {initial_size} start_t=0 train samples, got {len(train_outputs)}."
+            )
+
+        train_items = [train_outputs[i] for i in range(initial_size)]
+        metrics = [item.meta_info.pop("metrics") for item in train_items]
+        output = DataProto.concat(train_items)
+        timing = self._performance_metrics(metrics, output)
+
+        partial_timing = {
+            "partial_async/enabled": 1.0,
+            "partial_async/initial_samples": float(initial_size),
+            "partial_async/initial_groups": float(initial_group_count),
+            "partial_async/rollout_n": float(rollout_n),
+            "partial_async/threshold": float(threshold_groups * rollout_n),
+            "partial_async/threshold_groups": float(threshold_groups),
+            "partial_async/num_starts": float(num_starts),
+            "partial_async/total_samples": float(len(sample_records)),
+            "partial_async/extra_samples": float(len(sample_records) - initial_size),
+            "partial_async/wall_time": relative_s(),
+        }
+        for event in boundary_events:
+            event_id = event["end_t"]
+            partial_timing[f"partial_async/boundary/{event_id}/relative_s"] = event["relative_s"]
+            partial_timing[f"partial_async/boundary/{event_id}/epoch_s"] = event["epoch_s"]
+            partial_timing[f"partial_async/boundary/{event_id}/count"] = float(event["count"])
+            partial_timing[f"partial_async/boundary/{event_id}/group_count"] = float(event["group_count"])
+        timing.update(partial_timing)
+
+        os.makedirs(os.path.dirname(jsonl_path) or ".", exist_ok=True)
+        with open(jsonl_path, "a", encoding="utf-8") as fout:
+            fout.write(
+                json.dumps(
+                    {
+                        "event": "partial_async_step",
+                        "step": step,
+                        "initial_samples": initial_size,
+                        "initial_groups": initial_group_count,
+                        "rollout_n": rollout_n,
+                        "threshold": threshold_groups * rollout_n,
+                        "threshold_groups": threshold_groups,
+                        "num_starts": num_starts,
+                        "step_start_epoch_s": step_epoch_s,
+                        "jsonl_path": jsonl_path,
+                        "boundary_events": boundary_events,
+                        "samples": sample_records,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+
+        output.meta_info = {
+            "timing": timing,
+            "partial_async_jsonl": jsonl_path,
+            **output.meta_info,
+        }
         return output
 
     def _performance_metrics(self, metrics: list[list[dict[str, str]]], output: DataProto) -> dict[str, float]:

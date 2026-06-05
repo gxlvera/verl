@@ -305,8 +305,12 @@ def compute_timing_metrics(batch: DataProto, timing_raw: dict[str, float]) -> di
         **{name: num_overall_tokens for name in ["ref", "values", "adv", "update_critic", "update_actor"]},
     }
 
+    passthrough_metrics = {name: value for name, value in timing_raw.items() if name.startswith("partial_async/")}
+    timed_metrics = {name: value for name, value in timing_raw.items() if name not in passthrough_metrics}
+
     return {
-        **{f"timing_s/{name}": value for name, value in timing_raw.items()},
+        **passthrough_metrics,
+        **{f"timing_s/{name}": value for name, value in timed_metrics.items()},
         **{
             f"timing_per_token_ms/{name}": timing_raw[name] * 1000 / num_tokens_of_section[name]
             for name in set(num_tokens_of_section.keys()) & set(timing_raw.keys())

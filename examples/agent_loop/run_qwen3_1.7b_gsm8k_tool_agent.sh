@@ -60,6 +60,9 @@ PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE:-8}
 PPO_MICRO_BATCH_SIZE_PER_GPU=${PPO_MICRO_BATCH_SIZE_PER_GPU:-8}
 MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-1024}
 MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-2048}
+PER_TURN_MAX_RESPONSE_LENGTH=${PER_TURN_MAX_RESPONSE_LENGTH:-}
+MAX_MODEL_LEN=${MAX_MODEL_LEN:-}
+MAX_TOOL_RESPONSE_LENGTH=${MAX_TOOL_RESPONSE_LENGTH:-4096}
 DATA_SHUFFLE=${DATA_SHUFFLE:-False}
 DATA_SEED=${DATA_SEED:-42}
 ACTOR_SHUFFLE=${ACTOR_SHUFFLE:-False}
@@ -73,6 +76,12 @@ export GSM8K_TOOL_SLEEP_MS=${GSM8K_TOOL_SLEEP_MS:-300}
 export GSM8K_TOOL_SLEEP_DIST=${GSM8K_TOOL_SLEEP_DIST:-}
 export GSM8K_TOOL_SLEEP_SEED=${GSM8K_TOOL_SLEEP_SEED:-}
 export GSM8K_MIN_TOOL_CALLS=${GSM8K_MIN_TOOL_CALLS:-2}
+export HOTPOT_TOOL_SLEEP_MS=${HOTPOT_TOOL_SLEEP_MS:-${GSM8K_TOOL_SLEEP_MS}}
+export HOTPOT_TOOL_SLEEP_DIST=${HOTPOT_TOOL_SLEEP_DIST:-${GSM8K_TOOL_SLEEP_DIST}}
+export HOTPOT_TOOL_SLEEP_SEED=${HOTPOT_TOOL_SLEEP_SEED:-${GSM8K_TOOL_SLEEP_SEED}}
+export HOTPOT_MIN_TOOL_CALLS=${HOTPOT_MIN_TOOL_CALLS:-${GSM8K_MIN_TOOL_CALLS}}
+export HOTPOT_AUTO_TOOL_NAME=${HOTPOT_AUTO_TOOL_NAME:-}
+export AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH=${PER_TURN_MAX_RESPONSE_LENGTH}
 export MOCK_BATCH_SIZE=${MOCK_BATCH_SIZE:-32}
 SGLANG_PROMETHEUS_ENABLE=${SGLANG_PROMETHEUS_ENABLE:-false}
 SGLANG_PROMETHEUS_PORT=${SGLANG_PROMETHEUS_PORT:-9090}
@@ -93,7 +102,7 @@ if [[ "${LOG_TO_FILE}" == "1" ]]; then
     exec > >(tee -a "${RUN_LOG_FILE}") 2>&1
     echo "Saving full run log to ${RUN_LOG_FILE}"
 fi
-echo "GSM8K tool config: sleep_ms=${GSM8K_TOOL_SLEEP_MS}, sleep_dist=${GSM8K_TOOL_SLEEP_DIST:-<unset>}, sleep_seed=${GSM8K_TOOL_SLEEP_SEED:-<unset>}, min_tool_calls=${GSM8K_MIN_TOOL_CALLS}, mock_batch_size=${MOCK_BATCH_SIZE}, sglang_prometheus=${SGLANG_PROMETHEUS_ENABLE}:${SGLANG_PROMETHEUS_PORT}"
+echo "Tool config: gsm8k_sleep_ms=${GSM8K_TOOL_SLEEP_MS}, hotpot_sleep_ms=${HOTPOT_TOOL_SLEEP_MS}, sleep_dist=${HOTPOT_TOOL_SLEEP_DIST:-${GSM8K_TOOL_SLEEP_DIST:-<unset>}}, sleep_seed=${HOTPOT_TOOL_SLEEP_SEED:-${GSM8K_TOOL_SLEEP_SEED:-<unset>}}, min_tool_calls=${HOTPOT_MIN_TOOL_CALLS:-${GSM8K_MIN_TOOL_CALLS}}, mock_batch_size=${MOCK_BATCH_SIZE}, per_turn_max_response=${PER_TURN_MAX_RESPONSE_LENGTH:-<unset>}, max_model_len=${MAX_MODEL_LEN:-<unset>}, max_tool_response_length=${MAX_TOOL_RESPONSE_LENGTH}, sglang_prometheus=${SGLANG_PROMETHEUS_ENABLE}:${SGLANG_PROMETHEUS_PORT}"
 echo "Determinism config: data_shuffle=${DATA_SHUFFLE}, data_seed=${DATA_SEED}, actor_shuffle=${ACTOR_SHUFFLE}, actor_data_loader_seed=${ACTOR_DATA_LOADER_SEED}, rollout_do_sample=${ROLLOUT_DO_SAMPLE}, temperature=${ROLLOUT_TEMPERATURE}, top_p=${ROLLOUT_TOP_P}, top_k=${ROLLOUT_TOP_K}"
 echo "W&B run name: ${EXPERIMENT_NAME}"
 
@@ -142,11 +151,21 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.prometheus.enable="${SGLANG_PROMETHEUS_ENABLE}" \
     actor_rollout_ref.rollout.prometheus.port="${SGLANG_PROMETHEUS_PORT}" \
     actor_rollout_ref.rollout.disable_log_stats=False \
+    actor_rollout_ref.rollout.max_model_len="${MAX_MODEL_LEN:-null}" \
+    actor_rollout_ref.rollout.multi_turn.max_tool_response_length="${MAX_TOOL_RESPONSE_LENGTH}" \
     +ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_TOOL_SLEEP_MS="'${GSM8K_TOOL_SLEEP_MS}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_TOOL_SLEEP_DIST="'${GSM8K_TOOL_SLEEP_DIST}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_TOOL_SLEEP_SEED="'${GSM8K_TOOL_SLEEP_SEED}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_MIN_TOOL_CALLS="'${GSM8K_MIN_TOOL_CALLS}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_MS="'${HOTPOT_TOOL_SLEEP_MS}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_DIST="'${HOTPOT_TOOL_SLEEP_DIST}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_SEED="'${HOTPOT_TOOL_SLEEP_SEED}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MIN_TOOL_CALLS="'${HOTPOT_MIN_TOOL_CALLS}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_AUTO_TOOL_NAME="'${HOTPOT_AUTO_TOOL_NAME}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH="'${AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.MOCK_BATCH_SIZE="'${MOCK_BATCH_SIZE}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_NUM_STARTS="'${PARTIAL_ASYNC_NUM_STARTS:-}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_WARMUP_STEPS="'${PARTIAL_ASYNC_WARMUP_STEPS:-}'" \
     trainer.logger='["console","tensorboard","wandb"]' \
     trainer.project_name="${PROJECT_NAME}" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \

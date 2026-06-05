@@ -127,8 +127,14 @@ class ToolAgentLoop(AgentLoopBase):
         self.max_parallel_calls = self.rollout_config.multi_turn.max_parallel_calls
         self.max_tool_response_length = self.rollout_config.multi_turn.max_tool_response_length
         self.tool_response_truncate_side = self.rollout_config.multi_turn.tool_response_truncate_side
-        self.min_tool_calls = int(os.getenv("GSM8K_MIN_TOOL_CALLS", "0") or "0")
-        self.auto_tool_name = os.getenv("GSM8K_AUTO_TOOL_NAME", "calc_gsm8k_reward")
+        self.min_tool_calls = int(
+            os.getenv("HOTPOT_MIN_TOOL_CALLS", os.getenv("GSM8K_MIN_TOOL_CALLS", "0")) or "0"
+        )
+        self.auto_tool_name = os.getenv(
+            "HOTPOT_AUTO_TOOL_NAME", os.getenv("GSM8K_AUTO_TOOL_NAME", "calc_gsm8k_reward")
+        )
+        per_turn_limit = os.getenv("AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH", "").strip()
+        self.per_turn_response_length = int(per_turn_limit) if per_turn_limit else None
 
         tool_list = tools.tools if tools else []
         self.tools = {tool.name: tool for tool in tool_list}
@@ -263,6 +269,14 @@ class ToolAgentLoop(AgentLoopBase):
         if self.tool_parser.stop_token_ids:
             stop_token_ids = list(set((sampling_params.get("stop_token_ids") or []) + self.tool_parser.stop_token_ids))
             sampling_params = {**sampling_params, "stop_token_ids": stop_token_ids}
+        if self.per_turn_response_length is not None:
+            remaining_response = self.response_length - len(agent_data.response_mask)
+            if remaining_response <= 0:
+                return AgentState.TERMINATED
+            sampling_params = {
+                **sampling_params,
+                "max_new_tokens": min(self.per_turn_response_length, remaining_response),
+            }
 
         _decode_start = time.perf_counter()
         agent_data.set_worker_state("ready_to_llm")

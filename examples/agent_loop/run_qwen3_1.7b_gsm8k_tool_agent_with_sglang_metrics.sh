@@ -42,10 +42,37 @@ echo "Sampling interval: ${SGLANG_METRICS_INTERVAL}s"
     export RUN_LOG_FILE
     export LOG_ROOT
     export LOG_TO_FILE=1
-    export GSM8K_TOOL_SLEEP_MS
-    export GSM8K_MIN_TOOL_CALLS
-    export TOTAL_STEPS
-    export SGLANG_PROMETHEUS_ENABLE=true
+	    export GSM8K_TOOL_SLEEP_MS
+	    export GSM8K_MIN_TOOL_CALLS
+	    export HOTPOT_TOOL_SLEEP_MS
+	    export HOTPOT_TOOL_SLEEP_DIST
+	    export HOTPOT_TOOL_SLEEP_SEED
+	    export HOTPOT_MIN_TOOL_CALLS
+	    export HOTPOT_AUTO_TOOL_NAME
+	    export AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH
+	    export PER_TURN_MAX_RESPONSE_LENGTH
+	    export MAX_MODEL_LEN
+	    export MAX_TOOL_RESPONSE_LENGTH
+	    export MAX_RESPONSE_LENGTH
+	    export MAX_PROMPT_LENGTH
+	    export DATA_DIR
+	    export TOOL_FILE
+	    export TRAIN_BATCH_SIZE
+	    export PPO_MINI_BATCH_SIZE
+	    export PPO_MICRO_BATCH_SIZE_PER_GPU
+	    export ROLLOUT_N
+	    export ROLLOUT_DO_SAMPLE
+	    export ROLLOUT_TEMPERATURE
+	    export ROLLOUT_TOP_P
+	    export ROLLOUT_TOP_K
+	    export DATA_SHUFFLE
+	    export DATA_SEED
+	    export ACTOR_SHUFFLE
+	    export ACTOR_DATA_LOADER_SEED
+	    export CUDA_VISIBLE_DEVICES
+	    export NGPUS_PER_NODE
+	    export TOTAL_STEPS
+	    export SGLANG_PROMETHEUS_ENABLE=true
     bash examples/agent_loop/run_qwen3_1.7b_gsm8k_tool_agent.sh "$@"
 ) &
 RUN_PID=$!
