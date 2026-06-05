@@ -325,6 +325,54 @@ class ToolAgentLoop(AgentLoopBase):
             return False
         return [self._tool_call_key(c) for c in main_calls] == [self._tool_call_key(c) for c in draft_calls]
 
+    def _start_prefetch_tasks(
+        self,
+        draft_calls: list[FunctionCall],
+        agent_data: AgentData,
+        record: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        prefetches: dict[str, dict[str, Any]] = {}
+        if not draft_calls:
+            return prefetches
+        record["prefetch_tool_submit_epoch_s"] = time.time()
+        record["prefetch_tool_submit_perf_s"] = time.perf_counter()
+        record["prefetch_tool_calls"] = []
+        for index, tool_call in enumerate(draft_calls):
+            key = self._tool_call_key(tool_call)
+            if key in prefetches:
+                continue
+            task = asyncio.create_task(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
+            agent_data._speculative_background_tasks.append(task)
+            prefetches[key] = {"index": index, "tool_call": tool_call, "task": task}
+            record["prefetch_tool_calls"].append(
+                {
+                    "index": index,
+                    "key": key,
+                    "tool_call": tool_call.model_dump(),
+                    "submit_epoch_s": time.time(),
+                    "submit_perf_s": time.perf_counter(),
+                }
+            )
+        record["prefetch_tool_call_count"] = len(prefetches)
+        return prefetches
+
+    def _record_prefetch_completion(
+        self,
+        record: dict[str, Any],
+        prefetch_info: dict[str, Any],
+        *,
+        status: str,
+    ) -> None:
+        record.setdefault("prefetch_tool_results", []).append(
+            {
+                "index": prefetch_info["index"],
+                "key": self._tool_call_key(prefetch_info["tool_call"]),
+                "status": status,
+                "done_epoch_s": time.time(),
+                "done_perf_s": time.perf_counter(),
+            }
+        )
+
     async def _generate_main_and_speculative(
         self,
         agent_data: AgentData,
@@ -368,8 +416,7 @@ class ToolAgentLoop(AgentLoopBase):
         )
 
         draft_calls: list[FunctionCall] = []
-        prefetch_task: asyncio.Task | None = None
-        prefetch_call: FunctionCall | None = None
+        prefetches: dict[str, dict[str, Any]] = {}
 
         while not main_task.done():
             done, _ = await asyncio.wait({main_task, draft_task}, return_when=asyncio.FIRST_COMPLETED)
@@ -380,12 +427,7 @@ class ToolAgentLoop(AgentLoopBase):
                 record["non_thinking_tokens"] = len(draft_output.token_ids)
                 _, draft_calls = await self.tool_parser.extract_tool_calls(draft_output.token_ids, tools)
                 record["non_thinking_tool_calls"] = [c.model_dump() for c in draft_calls]
-                if draft_calls:
-                    prefetch_call = draft_calls[0]
-                    record["prefetch_tool_submit_epoch_s"] = time.time()
-                    record["prefetch_tool_submit_perf_s"] = time.perf_counter()
-                    prefetch_task = asyncio.create_task(self._call_tool(prefetch_call, agent_data.tools_kwargs, agent_data))
-                    agent_data._speculative_background_tasks.append(prefetch_task)
+                prefetches = self._start_prefetch_tasks(draft_calls, agent_data, record)
             if main_task in done:
                 break
 
@@ -400,42 +442,59 @@ class ToolAgentLoop(AgentLoopBase):
             record["non_thinking_tokens"] = len(draft_output.token_ids)
             _, draft_calls = await self.tool_parser.extract_tool_calls(draft_output.token_ids, tools)
             record["non_thinking_tool_calls"] = [c.model_dump() for c in draft_calls]
-            if draft_calls and prefetch_task is None:
-                prefetch_call = draft_calls[0]
-                record["prefetch_tool_submit_epoch_s"] = time.time()
-                record["prefetch_tool_submit_perf_s"] = time.perf_counter()
-                prefetch_task = asyncio.create_task(self._call_tool(prefetch_call, agent_data.tools_kwargs, agent_data))
-                agent_data._speculative_background_tasks.append(prefetch_task)
+            if not prefetches:
+                prefetches = self._start_prefetch_tasks(draft_calls, agent_data, record)
 
         _, main_calls = await self.tool_parser.extract_tool_calls(output.token_ids, tools)
         record["main_tool_calls"] = [c.model_dump() for c in main_calls]
         record["main_finished"] = not bool(main_calls)
-        match = bool(main_calls) and self._tool_calls_match(main_calls, draft_calls)
+        record["full_tool_call_match"] = bool(main_calls) and self._tool_calls_match(main_calls, draft_calls)
+        executable_main_calls = main_calls[: self.max_parallel_calls]
+        executable_main_keys = [self._tool_call_key(call) for call in executable_main_calls]
+        matched_key = next((key for key in executable_main_keys if key in prefetches), None)
+        match = matched_key is not None
         record["tool_call_match"] = match
+        record["executed_tool_call_match"] = match
+        record["matched_prefetch_key"] = matched_key
+        record["main_executable_tool_calls"] = [c.model_dump() for c in executable_main_calls]
 
-        if prefetch_task is not None:
-            if match:
-                result = await prefetch_task
+        if prefetches:
+            if matched_key is not None:
+                matched_prefetch = prefetches[matched_key]
+                result = await matched_prefetch["task"]
                 record["prefetch_tool_done_epoch_s"] = time.time()
                 record["prefetch_tool_done_perf_s"] = time.perf_counter()
                 record["prefetch_delta_after_main_s"] = (
                     record["prefetch_tool_done_perf_s"] - record["main_done_perf_s"]
                 )
                 record["prefetch_reused"] = True
-                if prefetch_call is not None:
-                    agent_data.prefetched_tool_responses[self._tool_call_key(prefetch_call)] = result
-                    self._record_tool_result(agent_data, result, source="prefetch_reused")
-            elif prefetch_task.done():
-                with contextlib.suppress(Exception):
-                    result = prefetch_task.result()
-                    record["prefetch_tool_done_epoch_s"] = time.time()
-                    record["prefetch_tool_done_perf_s"] = time.perf_counter()
-                    self._record_tool_result(agent_data, result, source="prefetch_wasted")
-                record["prefetch_reused"] = False
+                record["matched_prefetch_index"] = matched_prefetch["index"]
+                agent_data.prefetched_tool_responses[matched_key] = result
+                self._record_tool_result(agent_data, result, source="prefetch_reused")
+                self._record_prefetch_completion(record, matched_prefetch, status="reused")
             else:
-                prefetch_task.cancel()
-                record["prefetch_cancelled"] = True
                 record["prefetch_reused"] = False
+            for key, prefetch_info in prefetches.items():
+                if key == matched_key:
+                    continue
+                task = prefetch_info["task"]
+                if task.done():
+                    with contextlib.suppress(Exception):
+                        result = task.result()
+                        self._record_tool_result(agent_data, result, source="prefetch_wasted")
+                    self._record_prefetch_completion(record, prefetch_info, status="wasted")
+                else:
+                    task.cancel()
+                    self._record_prefetch_completion(record, prefetch_info, status="cancelled")
+            record["prefetch_cancelled_count"] = sum(
+                1 for item in record.get("prefetch_tool_results", []) if item["status"] == "cancelled"
+            )
+            record["prefetch_wasted_count"] = sum(
+                1 for item in record.get("prefetch_tool_results", []) if item["status"] == "wasted"
+            )
+            record["prefetch_reused_count"] = sum(
+                1 for item in record.get("prefetch_tool_results", []) if item["status"] == "reused"
+            )
 
         agent_data.speculative_records.append(record)
         return output, main_calls, record
