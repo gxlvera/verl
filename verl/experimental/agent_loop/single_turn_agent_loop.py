@@ -13,6 +13,7 @@
 # limitations under the License.
 import logging
 import os
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -36,6 +37,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
+        agent_loop_start = time.perf_counter()
         messages = list(kwargs["raw_prompt"])
 
         # 1. extract multimodal inputs from messages
@@ -68,6 +70,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
             )
         if metrics.get("num_preempted") is None:
             metrics["num_preempted"] = output.num_preempted if output.num_preempted is not None else -1
+        metrics["agent_loop_e2e"] = time.perf_counter() - agent_loop_start
         response_mask = [1] * len(output.token_ids)
 
         output: AgentLoopOutput = AgentLoopOutput(

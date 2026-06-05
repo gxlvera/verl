@@ -31,6 +31,7 @@ import asyncio
 import logging
 import os
 import random
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from uuid import uuid4
@@ -81,7 +82,10 @@ class AgentLoopMetrics(BaseModel):
 
     generate_sequences: float = 0.0
     tool_calls: float = 0.0
+    tool_call_count: int = 0
     compute_score: float = 0.0
+    agent_loop_e2e: float = 0.0
+    mock_batch_completion_time: float = 0.0
     num_preempted: int = -1  # -1 means not available
     # Per-turn timing for a single trajectory (one entry per assistant turn).
     # Used for fine-grained rollout profiling; empty for agent loops that don't
@@ -89,6 +93,23 @@ class AgentLoopMetrics(BaseModel):
     per_turn_decode: list[float] = []  # target-model decode wall-clock per turn
     per_turn_tool: list[float] = []  # tool-execution wall-clock per turn (turns with a tool call)
     per_turn_total: list[float] = []  # decode + following tool call per turn
+    state_waiting_tool_mean: float = 0.0
+    state_waiting_tool_max: float = 0.0
+    state_waiting_tool_zero_fraction: float = 0.0
+    state_ready_to_llm_mean: float = 0.0
+    state_ready_to_llm_max: float = 0.0
+    state_ready_to_llm_zero_fraction: float = 0.0
+    state_llm_inflight_mean: float = 0.0
+    state_llm_inflight_max: float = 0.0
+    state_llm_inflight_zero_fraction: float = 0.0
+    state_finished_mean: float = 0.0
+    state_finished_max: float = 0.0
+    state_finished_zero_fraction: float = 0.0
+    state_ready_or_inflight_mean: float = 0.0
+    state_ready_or_inflight_max: float = 0.0
+    state_ready_or_inflight_zero_fraction: float = 0.0
+    state_tool_waiting_with_no_llm_fraction: float = 0.0
+    state_total_wall_time: float = 0.0
 
 
 class AgentLoopOutput(BaseModel):
@@ -396,6 +417,81 @@ def register(agent_name: str):
     return decorator
 
 
+class AgentLoopStateTracker:
+    """Track worker-local sample states during one rollout batch."""
+
+    TRACKED_STATES = ("waiting_tool", "ready_to_llm", "llm_inflight", "finished")
+
+    def __init__(self, num_samples: int):
+        self.num_samples = num_samples
+        self.start_time = time.perf_counter()
+        self.last_time = self.start_time
+        self.sample_states: dict[int, str | None] = {}
+        self.counts = {state: 0 for state in self.TRACKED_STATES}
+        self.area = {state: 0.0 for state in self.TRACKED_STATES}
+        self.zero_time = {state: 0.0 for state in self.TRACKED_STATES}
+        self.max_counts = {state: 0 for state in self.TRACKED_STATES}
+        self.ready_or_inflight_area = 0.0
+        self.ready_or_inflight_zero_time = 0.0
+        self.ready_or_inflight_max = 0
+        self.tool_waiting_with_no_llm_time = 0.0
+
+    def _advance(self, now: float) -> None:
+        dt = max(0.0, now - self.last_time)
+        if dt == 0:
+            return
+
+        for state in self.TRACKED_STATES:
+            count = self.counts[state]
+            self.area[state] += count * dt
+            if count == 0:
+                self.zero_time[state] += dt
+
+        ready_or_inflight = self.counts["ready_to_llm"] + self.counts["llm_inflight"]
+        self.ready_or_inflight_area += ready_or_inflight * dt
+        if ready_or_inflight == 0:
+            self.ready_or_inflight_zero_time += dt
+        if self.counts["waiting_tool"] > 0 and self.counts["llm_inflight"] == 0:
+            self.tool_waiting_with_no_llm_time += dt
+
+        self.last_time = now
+
+    def transition(self, sample_id: int, new_state: str | None) -> None:
+        now = time.perf_counter()
+        self._advance(now)
+
+        old_state = self.sample_states.get(sample_id)
+        if old_state in self.counts:
+            self.counts[old_state] -= 1
+
+        if new_state in self.counts:
+            self.counts[new_state] += 1
+            self.sample_states[sample_id] = new_state
+        else:
+            self.sample_states[sample_id] = None
+
+        for state in self.TRACKED_STATES:
+            self.max_counts[state] = max(self.max_counts[state], self.counts[state])
+        self.ready_or_inflight_max = max(
+            self.ready_or_inflight_max,
+            self.counts["ready_to_llm"] + self.counts["llm_inflight"],
+        )
+
+    def summarize(self) -> dict[str, float]:
+        self._advance(time.perf_counter())
+        total = max(1e-12, self.last_time - self.start_time)
+        summary = {"state_total_wall_time": total}
+        for state in self.TRACKED_STATES:
+            summary[f"state_{state}_mean"] = self.area[state] / total
+            summary[f"state_{state}_max"] = float(self.max_counts[state])
+            summary[f"state_{state}_zero_fraction"] = self.zero_time[state] / total
+        summary["state_ready_or_inflight_mean"] = self.ready_or_inflight_area / total
+        summary["state_ready_or_inflight_max"] = float(self.ready_or_inflight_max)
+        summary["state_ready_or_inflight_zero_fraction"] = self.ready_or_inflight_zero_time / total
+        summary["state_tool_waiting_with_no_llm_fraction"] = self.tool_waiting_with_no_llm_time / total
+        return summary
+
+
 class AgentLoopWorker:
     """Agent loop worker takes a batch of messages and run each message in an agent loop.
 
@@ -551,6 +647,28 @@ class AgentLoopWorker:
         # NOTE: __do_sample__ is an internal per-sample override used by REMAX combined rollout.
         # Do not forward it to concrete agent loops, which may reject unknown kwargs.
         per_sample_do_sample = batch.non_tensor_batch.get("__do_sample__")
+        mock_batch_start_time = batch.meta_info.get("mock_batch_start_time", time.time())
+        state_tracker = AgentLoopStateTracker(num_samples=len(batch))
+
+        async def run_one(
+            sample_id: int,
+            sample_sampling_params: dict[str, Any],
+            sample_trajectory: dict[str, Any],
+            *,
+            trace: bool,
+            kwargs: dict[str, Any],
+        ) -> _InternalAgentLoopOutput:
+            output = await self._run_agent_loop(
+                sample_sampling_params,
+                sample_trajectory,
+                trace=trace,
+                _agent_state_tracker=state_tracker,
+                _agent_state_sample_id=sample_id,
+                **kwargs,
+            )
+            output.metrics.mock_batch_completion_time = time.time() - mock_batch_start_time
+            return output
+
         tasks = []
         for i in range(len(batch)):
             trace_this_sample = i in traced_indices
@@ -560,10 +678,21 @@ class AgentLoopWorker:
                 apply_greedy_sampling_params(sample_sampling_params)
             tasks.append(
                 asyncio.create_task(
-                    self._run_agent_loop(sample_sampling_params, trajectory_info[i], trace=trace_this_sample, **kwargs)
+                    run_one(
+                        i,
+                        sample_sampling_params,
+                        trajectory_info[i],
+                        trace=trace_this_sample,
+                        kwargs=kwargs,
+                    )
                 )
             )
         outputs = await asyncio.gather(*tasks)
+
+        state_summary = state_tracker.summarize()
+        for output in outputs:
+            for key, value in state_summary.items():
+                setattr(output.metrics, key, value)
 
         output = self._postprocess(
             outputs, input_non_tensor_batch=batch.non_tensor_batch, validate=batch.meta_info.get("validate", False)
@@ -977,6 +1106,10 @@ class AgentLoopWorker:
 
         non_tensor_batch = {
             "__num_turns__": np.array([input.num_turns for input in inputs], dtype=np.int32),
+            "tool_call_counts": np.array([input.metrics.tool_call_count for input in inputs], dtype=np.int32),
+            "mock_batch_completion_times": np.array(
+                [input.metrics.mock_batch_completion_time for input in inputs], dtype=np.float64
+            ),
         }
         if self.reward_loop_worker_handles is None and input_non_tensor_batch:
             non_tensor_batch.update(input_non_tensor_batch)
@@ -1114,6 +1247,7 @@ class AgentLoopManager:
         Returns:
             DataProto: Output batch.
         """
+        prompts.meta_info["mock_batch_start_time"] = time.time()
         chunkes = prompts.chunk(len(self.agent_loop_workers))
         outputs = await asyncio.gather(
             *[
@@ -1134,7 +1268,15 @@ class AgentLoopManager:
         timing = {}
         t_generate_sequences = np.array([metric["generate_sequences"] for chunk in metrics for metric in chunk])
         t_tool_calls = np.array([metric["tool_calls"] for chunk in metrics for metric in chunk])
+        t_tool_call_count = np.array([metric.get("tool_call_count", 0) for chunk in metrics for metric in chunk])
         t_compute_score = np.array([metric["compute_score"] for chunk in metrics for metric in chunk])
+        t_agent_loop_e2e = np.array(
+            [
+                metric.get("agent_loop_e2e", metric["generate_sequences"] + metric["tool_calls"])
+                for chunk in metrics
+                for metric in chunk
+            ]
+        )
         num_preempted = np.array([metric["num_preempted"] for chunk in metrics for metric in chunk])
         timing["agent_loop/num_preempted/min"] = num_preempted.min()
         timing["agent_loop/num_preempted/max"] = num_preempted.max()
@@ -1145,9 +1287,16 @@ class AgentLoopManager:
         timing["agent_loop/tool_calls/min"] = t_tool_calls.min()
         timing["agent_loop/tool_calls/max"] = t_tool_calls.max()
         timing["agent_loop/tool_calls/mean"] = t_tool_calls.mean()
+        timing["agent_loop/tool_call_count/min"] = t_tool_call_count.min()
+        timing["agent_loop/tool_call_count/max"] = t_tool_call_count.max()
+        timing["agent_loop/tool_call_count/mean"] = t_tool_call_count.mean()
+        timing["agent_loop/tool_called_ratio"] = (t_tool_call_count > 0).mean()
         timing["agent_loop/compute_score/min"] = t_compute_score.min()
         timing["agent_loop/compute_score/max"] = t_compute_score.max()
         timing["agent_loop/compute_score/mean"] = t_compute_score.mean()
+        timing["agent_loop/e2e/min"] = t_agent_loop_e2e.min()
+        timing["agent_loop/e2e/max"] = t_agent_loop_e2e.max()
+        timing["agent_loop/e2e/mean"] = t_agent_loop_e2e.mean()
 
         # Per-prompt rollout duration: decode + tool execution per prompt (reward
         # scoring excluded). Reported across the batch so the mean complements the
@@ -1167,6 +1316,39 @@ class AgentLoopManager:
                 timing[f"agent_loop/{tag}/max"] = arr.max()
                 timing[f"agent_loop/{tag}/mean"] = arr.mean()
 
+        state_metric_paths = {
+            "state_waiting_tool_mean": "waiting_tool/mean",
+            "state_waiting_tool_max": "waiting_tool/max",
+            "state_waiting_tool_zero_fraction": "waiting_tool/zero_fraction",
+            "state_ready_to_llm_mean": "ready_to_llm/mean",
+            "state_ready_to_llm_max": "ready_to_llm/max",
+            "state_ready_to_llm_zero_fraction": "ready_to_llm/zero_fraction",
+            "state_llm_inflight_mean": "llm_inflight/mean",
+            "state_llm_inflight_max": "llm_inflight/max",
+            "state_llm_inflight_zero_fraction": "llm_inflight/zero_fraction",
+            "state_finished_mean": "finished/mean",
+            "state_finished_max": "finished/max",
+            "state_finished_zero_fraction": "finished/zero_fraction",
+            "state_ready_or_inflight_mean": "ready_or_inflight/mean",
+            "state_ready_or_inflight_max": "ready_or_inflight/max",
+            "state_ready_or_inflight_zero_fraction": "ready_or_inflight/zero_fraction",
+            "state_tool_waiting_with_no_llm_fraction": "tool_waiting_with_no_llm/fraction",
+            "state_total_wall_time": "total_wall_time",
+        }
+        for metric_key, metric_path in state_metric_paths.items():
+            values = [
+                metric[metric_key]
+                for chunk in metrics
+                for metric in chunk
+                if metric_key in metric and metric[metric_key] is not None
+            ]
+            if values:
+                arr = np.asarray(values, dtype=np.float64)
+                if metric_key.endswith("_max") or metric_key == "state_total_wall_time":
+                    timing[f"agent_loop/state/{metric_path}"] = arr.max()
+                else:
+                    timing[f"agent_loop/state/{metric_path}"] = arr.mean()
+
         # Number of turns per prompt (mirrored into the agent_loop namespace; also
         # available as num_turns/{min,max,mean} from the data metrics).
         if "__num_turns__" in output.non_tensor_batch:
@@ -1175,11 +1357,32 @@ class AgentLoopManager:
             timing["agent_loop/num_turns/max"] = num_turns.max()
             timing["agent_loop/num_turns/mean"] = num_turns.mean()
 
-        # batch sequence generation is bounded by the slowest sample
-        slowest = np.argmax(t_generate_sequences + t_tool_calls + t_compute_score)
+        if "mock_batch_completion_times" in output.non_tensor_batch:
+            completion_times = np.asarray(output.non_tensor_batch["mock_batch_completion_times"], dtype=np.float64)
+            completion_times = completion_times[np.isfinite(completion_times)]
+            completion_times = completion_times[completion_times >= 0]
+            if len(completion_times) > 0:
+                completion_times = np.sort(completion_times)
+                timing["agent_loop/mock_batch_time/first"] = completion_times[0]
+                timing["agent_loop/mock_batch_time/last"] = completion_times[-1]
+                timing["agent_loop/mock_batch_time/mean_completion"] = completion_times.mean()
+
+                try:
+                    mock_batch_size = int(os.getenv("MOCK_BATCH_SIZE", "32"))
+                except ValueError:
+                    mock_batch_size = 32
+
+                if mock_batch_size > 0:
+                    for collected in range(mock_batch_size, len(completion_times) + 1, mock_batch_size):
+                        timing[f"agent_loop/mock_batch_time/{collected}"] = completion_times[collected - 1]
+
+        # batch sequence generation is bounded by the strict slowest agent-loop sample
+        slowest = np.argmax(t_agent_loop_e2e)
         prompt_length = output.batch["prompts"].shape[1]
+        timing["agent_loop/slowest/e2e"] = t_agent_loop_e2e[slowest]
         timing["agent_loop/slowest/generate_sequences"] = t_generate_sequences[slowest]
         timing["agent_loop/slowest/tool_calls"] = t_tool_calls[slowest]
+        timing["agent_loop/slowest/tool_call_count"] = t_tool_call_count[slowest]
         timing["agent_loop/slowest/compute_score"] = t_compute_score[slowest]
         timing["agent_loop/slowest/num_preempted"] = num_preempted[slowest]
 

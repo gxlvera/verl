@@ -57,11 +57,20 @@ class FunctionTool:
     tool_schema: OpenAIFunctionToolSchema
     is_async: bool = False
 
-    async def call(self, parameters: dict[str, Any]) -> Any:
-        """Invoke the underlying function with the LLM-supplied parameters."""
+    async def call(self, parameters: dict[str, Any], injected_parameters: Optional[dict[str, Any]] = None) -> Any:
+        """Invoke the underlying function with LLM parameters plus hidden runtime parameters."""
+        call_parameters = dict(parameters)
+        if injected_parameters:
+            call_parameters.update(injected_parameters)
+
+        sig = inspect.signature(self.fn)
+        accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if not accepts_kwargs:
+            call_parameters = {k: v for k, v in call_parameters.items() if k in sig.parameters}
+
         if self.is_async:
-            return await self.fn(**parameters)
-        return await asyncio.to_thread(self.fn, **parameters)
+            return await self.fn(**call_parameters)
+        return await asyncio.to_thread(self.fn, **call_parameters)
 
 
 def function_tool(

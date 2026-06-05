@@ -264,6 +264,10 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str,
         metrics["tool_call_counts/min"] = tool_call_counts.min()
         metrics["tool_call_counts/max"] = tool_call_counts.max()
         metrics["tool_call_counts/mean"] = tool_call_counts.mean()
+        values, counts = np.unique(tool_call_counts, return_counts=True)
+        total = len(tool_call_counts)
+        for value, count in zip(values, counts, strict=True):
+            metrics[f"agent_loop/tool_call_count_dist/{int(value)}"] = float(count / total)
 
     return metrics
 

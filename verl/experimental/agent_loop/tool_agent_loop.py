@@ -68,6 +68,8 @@ class AgentData:
         metrics: dict[str, Any],
         request_id: str,
         tools_kwargs: dict[str, Any],
+        state_tracker: Any = None,
+        state_sample_id: Optional[int] = None,
     ):
         self.messages = messages
         self.image_data = image_data
@@ -77,6 +79,8 @@ class AgentData:
         self.metrics = metrics
         self.request_id = request_id
         self.tools_kwargs = tools_kwargs
+        self.state_tracker = state_tracker
+        self.state_sample_id = state_sample_id
 
         # State variables
         self.prompt_ids: list[int] = []
@@ -96,11 +100,16 @@ class AgentData:
 
         # Temporary state for tool calls
         self.tool_calls: list[FunctionCall] = []
+        self.tool_call_count = 0
 
         self.routed_experts = None
 
         # Extra fields for dynamic addition, e.g., tool session data
         self.extra_fields: dict[str, Any] = {}
+
+    def set_worker_state(self, state: str | None) -> None:
+        if self.state_tracker is not None and self.state_sample_id is not None:
+            self.state_tracker.transition(self.state_sample_id, state)
 
 
 @register("tool_agent")
@@ -118,6 +127,8 @@ class ToolAgentLoop(AgentLoopBase):
         self.max_parallel_calls = self.rollout_config.multi_turn.max_parallel_calls
         self.max_tool_response_length = self.rollout_config.multi_turn.max_tool_response_length
         self.tool_response_truncate_side = self.rollout_config.multi_turn.tool_response_truncate_side
+        self.min_tool_calls = int(os.getenv("GSM8K_MIN_TOOL_CALLS", "0") or "0")
+        self.auto_tool_name = os.getenv("GSM8K_AUTO_TOOL_NAME", "calc_gsm8k_reward")
 
         tool_list = tools.tools if tools else []
         self.tools = {tool.name: tool for tool in tool_list}
@@ -130,6 +141,7 @@ class ToolAgentLoop(AgentLoopBase):
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
+        _agent_loop_start = time.perf_counter()
         messages = list(kwargs["raw_prompt"])
 
         # extract multimodal inputs from messages
@@ -142,6 +154,8 @@ class ToolAgentLoop(AgentLoopBase):
         metrics = {}
         request_id = uuid4().hex
         tools_kwargs = kwargs.get("tools_kwargs", {})
+        state_tracker = kwargs.get("_agent_state_tracker")
+        state_sample_id = kwargs.get("_agent_state_sample_id")
 
         agent_data = AgentData(
             messages=messages,
@@ -152,6 +166,8 @@ class ToolAgentLoop(AgentLoopBase):
             metrics=metrics,
             request_id=request_id,
             tools_kwargs=tools_kwargs,
+            state_tracker=state_tracker,
+            state_sample_id=state_sample_id,
         )
 
         # Per-sample tool selection: filter global tools by extra_info.tool_selection
@@ -169,16 +185,20 @@ class ToolAgentLoop(AgentLoopBase):
 
         # State machine loop
         state = AgentState.PENDING
-        while state != AgentState.TERMINATED:
-            if state == AgentState.PENDING:
-                state = await self._handle_pending_state(agent_data, sampling_params)
-            elif state == AgentState.GENERATING:
-                state = await self._handle_generating_state(agent_data, sampling_params)
-            elif state == AgentState.PROCESSING_TOOLS:
-                state = await self._handle_processing_tools_state(agent_data)
-            else:
-                logger.error(f"Invalid state: {state}")
-                state = AgentState.TERMINATED
+        try:
+            while state != AgentState.TERMINATED:
+                if state == AgentState.PENDING:
+                    state = await self._handle_pending_state(agent_data, sampling_params)
+                elif state == AgentState.GENERATING:
+                    state = await self._handle_generating_state(agent_data, sampling_params)
+                elif state == AgentState.PROCESSING_TOOLS:
+                    state = await self._handle_processing_tools_state(agent_data)
+                else:
+                    logger.error(f"Invalid state: {state}")
+                    state = AgentState.TERMINATED
+        finally:
+            agent_data.set_worker_state("finished")
+        agent_data.metrics["agent_loop_e2e"] = time.perf_counter() - _agent_loop_start
 
         # Finalize output
         response_ids = agent_data.prompt_ids[-len(agent_data.response_mask) :]
@@ -245,7 +265,9 @@ class ToolAgentLoop(AgentLoopBase):
             sampling_params = {**sampling_params, "stop_token_ids": stop_token_ids}
 
         _decode_start = time.perf_counter()
+        agent_data.set_worker_state("ready_to_llm")
         with simple_timer("generate_sequences", agent_data.metrics):
+            agent_data.set_worker_state("llm_inflight")
             output: TokenOutput = await self.server_manager.generate(
                 request_id=agent_data.request_id,
                 prompt_ids=agent_data.prompt_ids,
@@ -255,6 +277,7 @@ class ToolAgentLoop(AgentLoopBase):
                 audio_data=agent_data.audio_data,
                 mm_processor_kwargs=agent_data.mm_processor_kwargs,
             )
+        agent_data.set_worker_state(None)
         agent_data.per_turn_decode.append(time.perf_counter() - _decode_start)
         # first time to set num_preempted
         if agent_data.metrics.get("num_preempted") is None:
@@ -299,8 +322,19 @@ class ToolAgentLoop(AgentLoopBase):
 
         if agent_data.tool_calls:
             return AgentState.PROCESSING_TOOLS
+        if agent_data.tool_call_count < self.min_tool_calls and self.auto_tool_name in active_tools:
+            answer_text = await self._decode_current_response(agent_data.response_ids)
+            agent_data.tool_calls = [
+                FunctionCall(name=self.auto_tool_name, arguments=json.dumps({"answer": answer_text}, ensure_ascii=False))
+            ]
+            return AgentState.PROCESSING_TOOLS
         else:
             return AgentState.TERMINATED
+
+    async def _decode_current_response(self, response_ids: list[int]) -> str:
+        return await self.loop.run_in_executor(
+            None, lambda: self.tokenizer.decode(response_ids, skip_special_tokens=True)
+        )
 
     async def _handle_processing_tools_state(self, agent_data: AgentData) -> AgentState:
         """Handle the processing tools state: execute tool calls and prepare tool responses."""
@@ -312,10 +346,14 @@ class ToolAgentLoop(AgentLoopBase):
         for tool_call in agent_data.tool_calls[: self.max_parallel_calls]:
             tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
             tool_call_names.append(tool_call.name)
+        agent_data.tool_call_count += len(tasks)
+        agent_data.metrics["tool_call_count"] = agent_data.tool_call_count
 
         _tool_start = time.perf_counter()
+        agent_data.set_worker_state("waiting_tool")
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
+        agent_data.set_worker_state(None)
         agent_data.per_turn_tool.append(time.perf_counter() - _tool_start)
 
         # Process tool responses and update multi_modal_data
@@ -457,11 +495,11 @@ class ToolAgentLoop(AgentLoopBase):
             tool = active_tools[tool_name]
 
             if isinstance(tool, FunctionTool):
-                # Function-based tools have no lifecycle; call directly.
-                # Note: tools_kwargs (create_kwargs / release_kwargs) is intentionally
-                # ignored here. Function tools are stateless and per-trajectory state
-                # injection is not supported by design; use a BaseTool subclass instead.
-                raw = await tool.call(tool_args)
+                # Function-based tools have no lifecycle. Dataset-provided
+                # create_kwargs are injected as hidden runtime parameters, so they
+                # are not exposed in the OpenAI tool schema seen by the model.
+                kwargs = tools_kwargs.get(tool_name, {})
+                raw = await tool.call(tool_args, injected_parameters=kwargs.get("create_kwargs", {}))
                 tool_execution_response, tool_reward, res = normalize_function_tool_return(raw)
             else:
                 # BaseTool subclass

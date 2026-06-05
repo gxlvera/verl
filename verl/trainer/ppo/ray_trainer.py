@@ -1125,6 +1125,21 @@ class RayPPOTrainer:
             if self.use_critic:
                 self.critic_wg.stop_profile()
 
+    def _log_tool_call_count_distribution(self, logger, batch: DataProto) -> None:
+        if "wandb" not in getattr(logger, "logger", {}) or "tool_call_counts" not in batch.non_tensor_batch:
+            return
+        wandb = logger.logger["wandb"]
+        if getattr(wandb, "run", None) is None:
+            return
+
+        tool_call_counts = np.asarray(batch.non_tensor_batch["tool_call_counts"], dtype=np.int32)
+        values, counts = np.unique(tool_call_counts, return_counts=True)
+        total = len(tool_call_counts)
+        table = wandb.Table(columns=["tool_call_count", "ratio", "num_samples"])
+        for value, count in zip(values, counts, strict=True):
+            table.add_data(int(value), float(count / total), int(count))
+        wandb.log({"agent_loop/tool_call_count_distribution": table}, step=self.global_steps)
+
     def _get_dp_size(self, worker_group, role: str) -> int:
         """Get data parallel size from worker group dispatch info.
 
@@ -1397,6 +1412,7 @@ class RayPPOTrainer:
             logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get("val_only", False):
                 self._shutdown_dump_executor()
+                logger.finish()
                 return
 
         if self.config.actor_rollout_ref.rollout.skip.get("enable", False):
@@ -1747,6 +1763,7 @@ class RayPPOTrainer:
                 )
 
                 # TODO: make a canonical logger that supports various backend
+                self._log_tool_call_count_distribution(logger, batch)
                 logger.log(data=metrics, step=self.global_steps)
 
                 progress_bar.update(1)
@@ -1758,6 +1775,7 @@ class RayPPOTrainer:
                     self._shutdown_dump_executor()
                     pprint(f"Final validation metrics: {last_val_metrics}")
                     progress_bar.close()
+                    logger.finish()
                     return
 
                 # this is experimental and may be changed/removed in the future
@@ -1768,3 +1786,4 @@ class RayPPOTrainer:
 
         # Ensure dump executor is shut down when training loop ends without reaching is_last_step
         self._shutdown_dump_executor()
+        logger.finish()
