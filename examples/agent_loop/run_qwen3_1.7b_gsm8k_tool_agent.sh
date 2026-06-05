@@ -67,6 +67,7 @@ DATA_SHUFFLE=${DATA_SHUFFLE:-False}
 DATA_SEED=${DATA_SEED:-42}
 ACTOR_SHUFFLE=${ACTOR_SHUFFLE:-False}
 ACTOR_DATA_LOADER_SEED=${ACTOR_DATA_LOADER_SEED:-42}
+DATA_ENABLE_THINKING=${DATA_ENABLE_THINKING:-False}
 
 TOTAL_STEPS=${TOTAL_STEPS:-20}
 
@@ -79,8 +80,17 @@ export GSM8K_MIN_TOOL_CALLS=${GSM8K_MIN_TOOL_CALLS:-2}
 export HOTPOT_TOOL_SLEEP_MS=${HOTPOT_TOOL_SLEEP_MS:-${GSM8K_TOOL_SLEEP_MS}}
 export HOTPOT_TOOL_SLEEP_DIST=${HOTPOT_TOOL_SLEEP_DIST:-${GSM8K_TOOL_SLEEP_DIST}}
 export HOTPOT_TOOL_SLEEP_SEED=${HOTPOT_TOOL_SLEEP_SEED:-${GSM8K_TOOL_SLEEP_SEED}}
+export HOTPOT_TOOL_LATENCY_SECONDS_LIST=${HOTPOT_TOOL_LATENCY_SECONDS_LIST:-}
 export HOTPOT_MIN_TOOL_CALLS=${HOTPOT_MIN_TOOL_CALLS:-${GSM8K_MIN_TOOL_CALLS}}
 export HOTPOT_AUTO_TOOL_NAME=${HOTPOT_AUTO_TOOL_NAME:-}
+export HOTPOT_SPECULATIVE_TOOL_PREFETCH=${HOTPOT_SPECULATIVE_TOOL_PREFETCH:-}
+export HOTPOT_SPECULATIVE_JSONL=${HOTPOT_SPECULATIVE_JSONL:-}
+export HOTPOT_MAIN_ENABLE_THINKING=${HOTPOT_MAIN_ENABLE_THINKING:-}
+export HOTPOT_NON_THINKING_MAX_NEW_TOKENS=${HOTPOT_NON_THINKING_MAX_NEW_TOKENS:-}
+export ONLINE_SEARCH_RETRIEVAL_URL=${ONLINE_SEARCH_RETRIEVAL_URL:-${ONLINE_SEARCH_URL:-}}
+export ONLINE_SEARCH_TOPK=${ONLINE_SEARCH_TOPK:-3}
+export ONLINE_SEARCH_TIMEOUT=${ONLINE_SEARCH_TIMEOUT:-20}
+export ONLINE_SEARCH_MAX_CHARS=${ONLINE_SEARCH_MAX_CHARS:-${MAX_TOOL_RESPONSE_LENGTH}}
 export AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH=${PER_TURN_MAX_RESPONSE_LENGTH}
 export MOCK_BATCH_SIZE=${MOCK_BATCH_SIZE:-32}
 SGLANG_PROMETHEUS_ENABLE=${SGLANG_PROMETHEUS_ENABLE:-false}
@@ -102,8 +112,8 @@ if [[ "${LOG_TO_FILE}" == "1" ]]; then
     exec > >(tee -a "${RUN_LOG_FILE}") 2>&1
     echo "Saving full run log to ${RUN_LOG_FILE}"
 fi
-echo "Tool config: gsm8k_sleep_ms=${GSM8K_TOOL_SLEEP_MS}, hotpot_sleep_ms=${HOTPOT_TOOL_SLEEP_MS}, sleep_dist=${HOTPOT_TOOL_SLEEP_DIST:-${GSM8K_TOOL_SLEEP_DIST:-<unset>}}, sleep_seed=${HOTPOT_TOOL_SLEEP_SEED:-${GSM8K_TOOL_SLEEP_SEED:-<unset>}}, min_tool_calls=${HOTPOT_MIN_TOOL_CALLS:-${GSM8K_MIN_TOOL_CALLS}}, mock_batch_size=${MOCK_BATCH_SIZE}, per_turn_max_response=${PER_TURN_MAX_RESPONSE_LENGTH:-<unset>}, max_model_len=${MAX_MODEL_LEN:-<unset>}, max_tool_response_length=${MAX_TOOL_RESPONSE_LENGTH}, sglang_prometheus=${SGLANG_PROMETHEUS_ENABLE}:${SGLANG_PROMETHEUS_PORT}"
-echo "Determinism config: data_shuffle=${DATA_SHUFFLE}, data_seed=${DATA_SEED}, actor_shuffle=${ACTOR_SHUFFLE}, actor_data_loader_seed=${ACTOR_DATA_LOADER_SEED}, rollout_do_sample=${ROLLOUT_DO_SAMPLE}, temperature=${ROLLOUT_TEMPERATURE}, top_p=${ROLLOUT_TOP_P}, top_k=${ROLLOUT_TOP_K}"
+echo "Tool config: gsm8k_sleep_ms=${GSM8K_TOOL_SLEEP_MS}, hotpot_sleep_ms=${HOTPOT_TOOL_SLEEP_MS}, sleep_dist=${HOTPOT_TOOL_SLEEP_DIST:-${GSM8K_TOOL_SLEEP_DIST:-<unset>}}, latency_seconds_list=${HOTPOT_TOOL_LATENCY_SECONDS_LIST:-<unset>}, sleep_seed=${HOTPOT_TOOL_SLEEP_SEED:-${GSM8K_TOOL_SLEEP_SEED:-<unset>}}, min_tool_calls=${HOTPOT_MIN_TOOL_CALLS:-${GSM8K_MIN_TOOL_CALLS}}, speculative_prefetch=${HOTPOT_SPECULATIVE_TOOL_PREFETCH:-<unset>}, mock_batch_size=${MOCK_BATCH_SIZE}, per_turn_max_response=${PER_TURN_MAX_RESPONSE_LENGTH:-<unset>}, max_model_len=${MAX_MODEL_LEN:-<unset>}, max_tool_response_length=${MAX_TOOL_RESPONSE_LENGTH}, sglang_prometheus=${SGLANG_PROMETHEUS_ENABLE}:${SGLANG_PROMETHEUS_PORT}"
+echo "Determinism config: data_shuffle=${DATA_SHUFFLE}, data_seed=${DATA_SEED}, data_enable_thinking=${DATA_ENABLE_THINKING}, actor_shuffle=${ACTOR_SHUFFLE}, actor_data_loader_seed=${ACTOR_DATA_LOADER_SEED}, rollout_do_sample=${ROLLOUT_DO_SAMPLE}, temperature=${ROLLOUT_TEMPERATURE}, top_p=${ROLLOUT_TOP_P}, top_k=${ROLLOUT_TOP_K}"
 echo "W&B run name: ${EXPERIMENT_NAME}"
 
 python3 -m verl.trainer.main_ppo \
@@ -119,7 +129,7 @@ python3 -m verl.trainer.main_ppo \
     data.return_raw_chat=True \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    +data.apply_chat_template_kwargs.enable_thinking=False \
+    +data.apply_chat_template_kwargs.enable_thinking="${DATA_ENABLE_THINKING}" \
     actor_rollout_ref.model.path="${MODEL_PATH}" \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
@@ -160,8 +170,17 @@ python3 -m verl.trainer.main_ppo \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_MS="'${HOTPOT_TOOL_SLEEP_MS}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_DIST="'${HOTPOT_TOOL_SLEEP_DIST}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_SEED="'${HOTPOT_TOOL_SLEEP_SEED}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_LATENCY_SECONDS_LIST="'${HOTPOT_TOOL_LATENCY_SECONDS_LIST}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MIN_TOOL_CALLS="'${HOTPOT_MIN_TOOL_CALLS}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_AUTO_TOOL_NAME="'${HOTPOT_AUTO_TOOL_NAME}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_SPECULATIVE_TOOL_PREFETCH="'${HOTPOT_SPECULATIVE_TOOL_PREFETCH}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_SPECULATIVE_JSONL="'${HOTPOT_SPECULATIVE_JSONL}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MAIN_ENABLE_THINKING="'${HOTPOT_MAIN_ENABLE_THINKING}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_NON_THINKING_MAX_NEW_TOKENS="'${HOTPOT_NON_THINKING_MAX_NEW_TOKENS}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_RETRIEVAL_URL="'${ONLINE_SEARCH_RETRIEVAL_URL}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_TOPK="'${ONLINE_SEARCH_TOPK}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_TIMEOUT="'${ONLINE_SEARCH_TIMEOUT}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_MAX_CHARS="'${ONLINE_SEARCH_MAX_CHARS}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH="'${AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.MOCK_BATCH_SIZE="'${MOCK_BATCH_SIZE}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_NUM_STARTS="'${PARTIAL_ASYNC_NUM_STARTS:-}'" \
