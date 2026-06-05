@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -101,6 +102,9 @@ class AgentData:
         # Temporary state for tool calls
         self.tool_calls: list[FunctionCall] = []
         self.tool_call_count = 0
+        self.prefetched_tool_responses: dict[str, tuple[ToolResponse, float, dict]] = {}
+        self.speculative_records: list[dict[str, Any]] = []
+        self._speculative_background_tasks: list[asyncio.Task] = []
 
         self.routed_experts = None
 
@@ -135,6 +139,16 @@ class ToolAgentLoop(AgentLoopBase):
         )
         per_turn_limit = os.getenv("AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH", "").strip()
         self.per_turn_response_length = int(per_turn_limit) if per_turn_limit else None
+        self.speculative_prefetch = os.getenv("HOTPOT_SPECULATIVE_TOOL_PREFETCH", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        self.speculative_jsonl = os.getenv("HOTPOT_SPECULATIVE_JSONL", "").strip()
+        self.main_enable_thinking = os.getenv(
+            "HOTPOT_MAIN_ENABLE_THINKING", "true" if self.speculative_prefetch else ""
+        ).strip()
+        self.non_thinking_max_new_tokens = int(os.getenv("HOTPOT_NON_THINKING_MAX_NEW_TOKENS", "0") or "0")
 
         tool_list = tools.tools if tools else []
         self.tools = {tool.name: tool for tool in tool_list}
@@ -204,6 +218,12 @@ class ToolAgentLoop(AgentLoopBase):
                     state = AgentState.TERMINATED
         finally:
             agent_data.set_worker_state("finished")
+            for task in agent_data._speculative_background_tasks:
+                if not task.done():
+                    task.cancel()
+            for task in agent_data._speculative_background_tasks:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         agent_data.metrics["agent_loop_e2e"] = time.perf_counter() - _agent_loop_start
 
         # Finalize output
@@ -225,6 +245,9 @@ class ToolAgentLoop(AgentLoopBase):
             decode + (agent_data.per_turn_tool[i] if i < len(agent_data.per_turn_tool) else 0.0)
             for i, decode in enumerate(agent_data.per_turn_decode)
         ]
+        self._finalize_tool_latency_metrics(agent_data)
+        self._finalize_speculative_metrics(agent_data)
+        self._write_speculative_jsonl(agent_data)
 
         output: AgentLoopOutput = AgentLoopOutput(
             prompt_ids=prompt_ids,
@@ -257,9 +280,165 @@ class ToolAgentLoop(AgentLoopBase):
             videos=agent_data.video_data,
             audios=agent_data.audio_data,
             mm_processor_kwargs=agent_data.mm_processor_kwargs,
+            apply_chat_template_kwargs=self._main_chat_template_kwargs(),
         )
         agent_data.prompt_ids = prompt_ids
         return AgentState.GENERATING
+
+    def _main_chat_template_kwargs(self) -> dict[str, Any] | None:
+        if not self.main_enable_thinking:
+            return None
+        return {"enable_thinking": self.main_enable_thinking.lower() in {"1", "true", "yes"}}
+
+    def _non_thinking_sampling_params(self, sampling_params: dict[str, Any]) -> dict[str, Any]:
+        params = dict(sampling_params)
+        if self.non_thinking_max_new_tokens > 0:
+            params["max_new_tokens"] = min(
+                self.non_thinking_max_new_tokens,
+                int(params.get("max_new_tokens", self.non_thinking_max_new_tokens)),
+            )
+        return params
+
+    async def _build_non_thinking_prompt_ids(self, agent_data: AgentData) -> list[int]:
+        schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
+        return await self.apply_chat_template(
+            agent_data.messages,
+            tools=schemas,
+            images=agent_data.image_data,
+            videos=agent_data.video_data,
+            audios=agent_data.audio_data,
+            mm_processor_kwargs=agent_data.mm_processor_kwargs,
+            apply_chat_template_kwargs={"enable_thinking": False},
+        )
+
+    @staticmethod
+    def _tool_call_key(tool_call: FunctionCall) -> str:
+        try:
+            args = json.loads(tool_call.arguments)
+            args_text = json.dumps(args, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            args_text = str(tool_call.arguments)
+        return json.dumps({"name": tool_call.name, "arguments": args_text}, sort_keys=True, ensure_ascii=False)
+
+    def _tool_calls_match(self, main_calls: list[FunctionCall], draft_calls: list[FunctionCall]) -> bool:
+        if len(main_calls) != len(draft_calls):
+            return False
+        return [self._tool_call_key(c) for c in main_calls] == [self._tool_call_key(c) for c in draft_calls]
+
+    async def _generate_main_and_speculative(
+        self,
+        agent_data: AgentData,
+        sampling_params: dict[str, Any],
+    ) -> tuple[TokenOutput, list[FunctionCall], dict[str, Any] | None]:
+        turn_index = agent_data.assistant_turns + 1
+        active_tools = getattr(agent_data, "_active_tools", self.tools)
+        tools = [tool.tool_schema for tool in active_tools.values()]
+        record: dict[str, Any] = {
+            "turn": turn_index,
+            "sample_request_id": agent_data.request_id,
+            "enabled": True,
+            "main_submit_epoch_s": time.time(),
+            "main_submit_perf_s": time.perf_counter(),
+        }
+        non_prompt_ids = await self._build_non_thinking_prompt_ids(agent_data)
+        record["non_thinking_submit_epoch_s"] = time.time()
+        record["non_thinking_submit_perf_s"] = time.perf_counter()
+
+        main_task = asyncio.create_task(
+            self.server_manager.generate(
+                request_id=agent_data.request_id,
+                prompt_ids=agent_data.prompt_ids,
+                sampling_params=sampling_params,
+                image_data=agent_data.image_data,
+                video_data=agent_data.video_data,
+                audio_data=agent_data.audio_data,
+                mm_processor_kwargs=agent_data.mm_processor_kwargs,
+            )
+        )
+        draft_task = asyncio.create_task(
+            self.server_manager.generate(
+                request_id=f"{agent_data.request_id}-nonthinking-{turn_index}",
+                prompt_ids=non_prompt_ids,
+                sampling_params=self._non_thinking_sampling_params(sampling_params),
+                image_data=agent_data.image_data,
+                video_data=agent_data.video_data,
+                audio_data=agent_data.audio_data,
+                mm_processor_kwargs=agent_data.mm_processor_kwargs,
+            )
+        )
+
+        draft_calls: list[FunctionCall] = []
+        prefetch_task: asyncio.Task | None = None
+        prefetch_call: FunctionCall | None = None
+
+        while not main_task.done():
+            done, _ = await asyncio.wait({main_task, draft_task}, return_when=asyncio.FIRST_COMPLETED)
+            if draft_task in done and not record.get("non_thinking_done_epoch_s"):
+                record["non_thinking_done_epoch_s"] = time.time()
+                record["non_thinking_done_perf_s"] = time.perf_counter()
+                draft_output = draft_task.result()
+                record["non_thinking_tokens"] = len(draft_output.token_ids)
+                _, draft_calls = await self.tool_parser.extract_tool_calls(draft_output.token_ids, tools)
+                record["non_thinking_tool_calls"] = [c.model_dump() for c in draft_calls]
+                if draft_calls:
+                    prefetch_call = draft_calls[0]
+                    record["prefetch_tool_submit_epoch_s"] = time.time()
+                    record["prefetch_tool_submit_perf_s"] = time.perf_counter()
+                    prefetch_task = asyncio.create_task(self._call_tool(prefetch_call, agent_data.tools_kwargs, agent_data))
+                    agent_data._speculative_background_tasks.append(prefetch_task)
+            if main_task in done:
+                break
+
+        output = await main_task
+        record["main_done_epoch_s"] = time.time()
+        record["main_done_perf_s"] = time.perf_counter()
+        record["main_tokens"] = len(output.token_ids)
+        if not draft_task.done():
+            draft_output = await draft_task
+            record["non_thinking_done_epoch_s"] = time.time()
+            record["non_thinking_done_perf_s"] = time.perf_counter()
+            record["non_thinking_tokens"] = len(draft_output.token_ids)
+            _, draft_calls = await self.tool_parser.extract_tool_calls(draft_output.token_ids, tools)
+            record["non_thinking_tool_calls"] = [c.model_dump() for c in draft_calls]
+            if draft_calls and prefetch_task is None:
+                prefetch_call = draft_calls[0]
+                record["prefetch_tool_submit_epoch_s"] = time.time()
+                record["prefetch_tool_submit_perf_s"] = time.perf_counter()
+                prefetch_task = asyncio.create_task(self._call_tool(prefetch_call, agent_data.tools_kwargs, agent_data))
+                agent_data._speculative_background_tasks.append(prefetch_task)
+
+        _, main_calls = await self.tool_parser.extract_tool_calls(output.token_ids, tools)
+        record["main_tool_calls"] = [c.model_dump() for c in main_calls]
+        record["main_finished"] = not bool(main_calls)
+        match = bool(main_calls) and self._tool_calls_match(main_calls, draft_calls)
+        record["tool_call_match"] = match
+
+        if prefetch_task is not None:
+            if match:
+                result = await prefetch_task
+                record["prefetch_tool_done_epoch_s"] = time.time()
+                record["prefetch_tool_done_perf_s"] = time.perf_counter()
+                record["prefetch_delta_after_main_s"] = (
+                    record["prefetch_tool_done_perf_s"] - record["main_done_perf_s"]
+                )
+                record["prefetch_reused"] = True
+                if prefetch_call is not None:
+                    agent_data.prefetched_tool_responses[self._tool_call_key(prefetch_call)] = result
+                    self._record_tool_result(agent_data, result, source="prefetch_reused")
+            elif prefetch_task.done():
+                with contextlib.suppress(Exception):
+                    result = prefetch_task.result()
+                    record["prefetch_tool_done_epoch_s"] = time.time()
+                    record["prefetch_tool_done_perf_s"] = time.perf_counter()
+                    self._record_tool_result(agent_data, result, source="prefetch_wasted")
+                record["prefetch_reused"] = False
+            else:
+                prefetch_task.cancel()
+                record["prefetch_cancelled"] = True
+                record["prefetch_reused"] = False
+
+        agent_data.speculative_records.append(record)
+        return output, main_calls, record
 
     async def _handle_generating_state(
         self, agent_data: AgentData, sampling_params: dict[str, Any], ignore_termination: bool = False
@@ -282,15 +461,21 @@ class ToolAgentLoop(AgentLoopBase):
         agent_data.set_worker_state("ready_to_llm")
         with simple_timer("generate_sequences", agent_data.metrics):
             agent_data.set_worker_state("llm_inflight")
-            output: TokenOutput = await self.server_manager.generate(
-                request_id=agent_data.request_id,
-                prompt_ids=agent_data.prompt_ids,
-                sampling_params=sampling_params,
-                image_data=agent_data.image_data,
-                video_data=agent_data.video_data,
-                audio_data=agent_data.audio_data,
-                mm_processor_kwargs=agent_data.mm_processor_kwargs,
-            )
+            if self.speculative_prefetch:
+                output, parsed_tool_calls, _spec_record = await self._generate_main_and_speculative(
+                    agent_data, sampling_params
+                )
+            else:
+                output: TokenOutput = await self.server_manager.generate(
+                    request_id=agent_data.request_id,
+                    prompt_ids=agent_data.prompt_ids,
+                    sampling_params=sampling_params,
+                    image_data=agent_data.image_data,
+                    video_data=agent_data.video_data,
+                    audio_data=agent_data.audio_data,
+                    mm_processor_kwargs=agent_data.mm_processor_kwargs,
+                )
+                parsed_tool_calls = None
         agent_data.set_worker_state(None)
         agent_data.per_turn_decode.append(time.perf_counter() - _decode_start)
         # first time to set num_preempted
@@ -332,7 +517,10 @@ class ToolAgentLoop(AgentLoopBase):
         # Extract tool calls (use per-sample tools if routed)
         active_tools = getattr(agent_data, "_active_tools", self.tools)
         tools = [tool.tool_schema for tool in active_tools.values()]
-        _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)
+        if parsed_tool_calls is None:
+            _, agent_data.tool_calls = await self.tool_parser.extract_tool_calls(agent_data.response_ids, tools)
+        else:
+            agent_data.tool_calls = parsed_tool_calls
 
         if agent_data.tool_calls:
             return AgentState.PROCESSING_TOOLS
@@ -356,17 +544,26 @@ class ToolAgentLoop(AgentLoopBase):
         new_images_this_turn: list[Any] = []  # Local variable instead of agent_data attribute
 
         tasks = []
+        responses: list[tuple[ToolResponse, float, dict]] = []
         tool_call_names = []
         for tool_call in agent_data.tool_calls[: self.max_parallel_calls]:
-            tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
+            key = self._tool_call_key(tool_call)
+            if key in agent_data.prefetched_tool_responses:
+                responses.append(agent_data.prefetched_tool_responses.pop(key))
+            else:
+                tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
             tool_call_names.append(tool_call.name)
-        agent_data.tool_call_count += len(tasks)
+        agent_data.tool_call_count += len(agent_data.tool_calls[: self.max_parallel_calls])
         agent_data.metrics["tool_call_count"] = agent_data.tool_call_count
 
         _tool_start = time.perf_counter()
         agent_data.set_worker_state("waiting_tool")
         with simple_timer("tool_calls", agent_data.metrics):
-            responses = await asyncio.gather(*tasks)
+            if tasks:
+                task_responses = await asyncio.gather(*tasks)
+                for response in task_responses:
+                    self._record_tool_result(agent_data, response, source="fallback_or_regular")
+                responses.extend(task_responses)
         agent_data.set_worker_state(None)
         agent_data.per_turn_tool.append(time.perf_counter() - _tool_start)
 
@@ -551,3 +748,68 @@ class ToolAgentLoop(AgentLoopBase):
                     tool_response_kwargs[attr_name] = attr_value
 
         return ToolResponse(**tool_response_kwargs), tool_reward, res
+
+    def _record_tool_result(
+        self, agent_data: AgentData, result: tuple[ToolResponse, float, dict], *, source: str
+    ) -> None:
+        _tool_response, _reward, meta = result
+        if not isinstance(meta, dict):
+            return
+        latency = meta.get("latency_s", meta.get("configured_sleep_s"))
+        configured = meta.get("configured_sleep_s")
+        if latency is not None:
+            agent_data.metrics.setdefault("tool_latency_s", []).append(float(latency))
+        if configured is not None:
+            agent_data.metrics.setdefault("tool_configured_sleep_s", []).append(float(configured))
+        agent_data.extra_fields.setdefault("tool_latency_source", []).append(source)
+
+    def _finalize_tool_latency_metrics(self, agent_data: AgentData) -> None:
+        for key in ("tool_latency_s", "tool_configured_sleep_s"):
+            values = agent_data.metrics.get(key) or []
+            if not values:
+                continue
+            arr = [float(v) for v in values]
+            agent_data.metrics[f"{key}_count"] = len(arr)
+            agent_data.metrics[f"{key}_min"] = min(arr)
+            agent_data.metrics[f"{key}_max"] = max(arr)
+            agent_data.metrics[f"{key}_mean"] = sum(arr) / len(arr)
+
+    def _finalize_speculative_metrics(self, agent_data: AgentData) -> None:
+        records = agent_data.speculative_records
+        if not records:
+            return
+        totals = [r for r in records if r.get("main_tool_calls")]
+        matches = [r for r in totals if r.get("tool_call_match")]
+        reused = [r for r in records if r.get("prefetch_reused")]
+        fallbacks = [r for r in totals if not r.get("tool_call_match")]
+        agent_data.metrics["speculative_turns"] = len(records)
+        agent_data.metrics["speculative_tool_turns"] = len(totals)
+        agent_data.metrics["speculative_matches"] = len(matches)
+        agent_data.metrics["speculative_reused"] = len(reused)
+        agent_data.metrics["speculative_fallbacks"] = len(fallbacks)
+        agent_data.metrics["speculative_match_rate"] = len(matches) / len(totals) if totals else 0.0
+        deltas = [float(r["prefetch_delta_after_main_s"]) for r in records if "prefetch_delta_after_main_s" in r]
+        if deltas:
+            agent_data.metrics["speculative_prefetch_delta_after_main_mean"] = sum(deltas) / len(deltas)
+            agent_data.metrics["speculative_prefetch_delta_after_main_min"] = min(deltas)
+            agent_data.metrics["speculative_prefetch_delta_after_main_max"] = max(deltas)
+
+    def _write_speculative_jsonl(self, agent_data: AgentData) -> None:
+        if not self.speculative_jsonl or not agent_data.speculative_records:
+            return
+        os.makedirs(os.path.dirname(self.speculative_jsonl) or ".", exist_ok=True)
+        with open(self.speculative_jsonl, "a", encoding="utf-8") as fout:
+            fout.write(
+                json.dumps(
+                    {
+                        "event": "hotpot_speculative_sample",
+                        "request_id": agent_data.request_id,
+                        "tool_call_count": agent_data.tool_call_count,
+                        "records": agent_data.speculative_records,
+                        "tool_latency_s": agent_data.metrics.get("tool_latency_s", []),
+                        "tool_configured_sleep_s": agent_data.metrics.get("tool_configured_sleep_s", []),
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import random
 
@@ -48,6 +49,13 @@ def _sleep_rng() -> random.Random:
 
 
 def _sample_sleep_ms() -> float:
+    seconds_list = os.getenv("HOTPOT_TOOL_LATENCY_SECONDS_LIST", "").strip()
+    if seconds_list:
+        values = [float(item.strip()) for item in seconds_list.split(",") if item.strip()]
+        if not values:
+            raise ValueError("HOTPOT_TOOL_LATENCY_SECONDS_LIST is set but contains no values.")
+        return _sleep_rng().choice(values) * 1000.0
+
     dist_spec = os.getenv("HOTPOT_TOOL_SLEEP_DIST", os.getenv("GSM8K_TOOL_SLEEP_DIST", "")).strip()
     if dist_spec:
         choices = _parse_sleep_distribution(dist_spec)
@@ -62,6 +70,12 @@ def _sample_sleep_ms() -> float:
 
     fixed_sleep = os.getenv("HOTPOT_TOOL_SLEEP_MS", os.getenv("GSM8K_TOOL_SLEEP_MS", "")).strip()
     return float(fixed_sleep) if fixed_sleep else 0.0
+
+
+def _fixed_context(query: str | None, answer: str | None) -> str:
+    key = f"{query or ''}\n{answer or ''}".encode("utf-8", errors="replace")
+    digest = hashlib.sha1(key).hexdigest()[:10]
+    return " ".join(f"evidence_{digest}_{idx:03d}" for idx in range(500))
 
 
 _RETRIEVE_HOTPOT_CONTEXT_SCHEMA = {
@@ -98,6 +112,16 @@ async def retrieve_hotpot_context(query: str | None = None, answer: str | None =
         answer: Optional answer draft passed by automatic tool-call forcing.
     """
     sleep_ms = _sample_sleep_ms()
+    started = asyncio.get_running_loop().time()
     if sleep_ms > 0:
         await asyncio.sleep(sleep_ms / 1000.0)
-    return _FIXED_CONTEXT_500_TOKENS
+    latency_s = asyncio.get_running_loop().time() - started
+    return (
+        _fixed_context(query, answer),
+        0.0,
+        {
+            "configured_sleep_s": sleep_ms / 1000.0,
+            "latency_s": latency_s,
+            "query": query or "",
+        },
+    )

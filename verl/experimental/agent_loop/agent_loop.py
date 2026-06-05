@@ -94,6 +94,25 @@ class AgentLoopMetrics(BaseModel):
     per_turn_decode: list[float] = []  # target-model decode wall-clock per turn
     per_turn_tool: list[float] = []  # tool-execution wall-clock per turn (turns with a tool call)
     per_turn_total: list[float] = []  # decode + following tool call per turn
+    tool_latency_s: list[float] = []
+    tool_configured_sleep_s: list[float] = []
+    tool_latency_s_count: int = 0
+    tool_latency_s_min: float = 0.0
+    tool_latency_s_max: float = 0.0
+    tool_latency_s_mean: float = 0.0
+    tool_configured_sleep_s_count: int = 0
+    tool_configured_sleep_s_min: float = 0.0
+    tool_configured_sleep_s_max: float = 0.0
+    tool_configured_sleep_s_mean: float = 0.0
+    speculative_turns: int = 0
+    speculative_tool_turns: int = 0
+    speculative_matches: int = 0
+    speculative_reused: int = 0
+    speculative_fallbacks: int = 0
+    speculative_match_rate: float = 0.0
+    speculative_prefetch_delta_after_main_mean: float = 0.0
+    speculative_prefetch_delta_after_main_min: float = 0.0
+    speculative_prefetch_delta_after_main_max: float = 0.0
     state_waiting_tool_mean: float = 0.0
     state_waiting_tool_max: float = 0.0
     state_waiting_tool_zero_fraction: float = 0.0
@@ -306,6 +325,7 @@ class AgentLoopBase(ABC):
         audios: list[Any] = None,
         mm_processor_kwargs: Optional[dict[str, Any]] = None,
         remove_system_prompt: bool = False,
+        apply_chat_template_kwargs: Optional[dict[str, Any]] = None,
     ):
         """Apply chat template to messages with optional tools, images, and videos.
 
@@ -319,6 +339,9 @@ class AgentLoopBase(ABC):
         Returns:
             list[int]: Prompt token ids.
         """
+        chat_template_kwargs = dict(self.apply_chat_template_kwargs)
+        if apply_chat_template_kwargs:
+            chat_template_kwargs.update(apply_chat_template_kwargs)
         if self.processor is not None:
             raw_prompt = await self.loop.run_in_executor(
                 None,
@@ -328,7 +351,7 @@ class AgentLoopBase(ABC):
                     tools=tools,
                     add_generation_prompt=True,
                     tokenize=False,
-                    **self.apply_chat_template_kwargs,
+                    **chat_template_kwargs,
                 ),
             )
 
@@ -352,7 +375,7 @@ class AgentLoopBase(ABC):
                     tools=tools,
                     add_generation_prompt=True,
                     tokenize=True,
-                    **self.apply_chat_template_kwargs,
+                    **chat_template_kwargs,
                 ),
             )
             prompt_ids = normalize_token_ids(tokenized_prompt)
@@ -1583,6 +1606,47 @@ class AgentLoopManager:
                 timing[f"agent_loop/{tag}/min"] = arr.min()
                 timing[f"agent_loop/{tag}/max"] = arr.max()
                 timing[f"agent_loop/{tag}/mean"] = arr.mean()
+
+        for tag in ("tool_latency_s", "tool_configured_sleep_s"):
+            values = [v for chunk in metrics for metric in chunk for v in (metric.get(tag) or [])]
+            if values:
+                arr = np.asarray(values, dtype=np.float64)
+                timing[f"agent_loop/{tag}/count"] = float(arr.size)
+                timing[f"agent_loop/{tag}/min"] = arr.min()
+                timing[f"agent_loop/{tag}/max"] = arr.max()
+                timing[f"agent_loop/{tag}/mean"] = arr.mean()
+                timing[f"agent_loop/{tag}/median"] = np.median(arr)
+                for upper, name in (
+                    (1.0, "lt_1s"),
+                    (1.5, "lt_1p5s"),
+                    (2.0, "lt_2s"),
+                    (3.0, "lt_3s"),
+                    (5.0, "lt_5s"),
+                ):
+                    timing[f"agent_loop/{tag}/fraction/{name}"] = (arr < upper).mean()
+                timing[f"agent_loop/{tag}/fraction/gt_5s"] = (arr > 5.0).mean()
+
+        speculative_count = sum(metric.get("speculative_tool_turns", 0) for chunk in metrics for metric in chunk)
+        if speculative_count:
+            speculative_matches = sum(metric.get("speculative_matches", 0) for chunk in metrics for metric in chunk)
+            speculative_reused = sum(metric.get("speculative_reused", 0) for chunk in metrics for metric in chunk)
+            speculative_fallbacks = sum(metric.get("speculative_fallbacks", 0) for chunk in metrics for metric in chunk)
+            timing["hotpot_speculative/tool_turns"] = float(speculative_count)
+            timing["hotpot_speculative/matches"] = float(speculative_matches)
+            timing["hotpot_speculative/reused"] = float(speculative_reused)
+            timing["hotpot_speculative/fallbacks"] = float(speculative_fallbacks)
+            timing["hotpot_speculative/match_rate"] = speculative_matches / speculative_count
+            deltas = [
+                metric.get("speculative_prefetch_delta_after_main_mean", 0.0)
+                for chunk in metrics
+                for metric in chunk
+                if metric.get("speculative_prefetch_delta_after_main_mean", 0.0) != 0.0
+            ]
+            if deltas:
+                arr = np.asarray(deltas, dtype=np.float64)
+                timing["hotpot_speculative/prefetch_delta_after_main_mean"] = arr.mean()
+                timing["hotpot_speculative/prefetch_delta_after_main_min"] = arr.min()
+                timing["hotpot_speculative/prefetch_delta_after_main_max"] = arr.max()
 
         state_metric_paths = {
             "state_waiting_tool_mean": "waiting_tool/mean",
