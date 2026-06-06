@@ -544,16 +544,7 @@ class ToolAgentLoop(AgentLoopBase):
         else:
             agent_data.metrics["num_preempted"] += output.num_preempted if output.num_preempted is not None else 0
 
-        if not agent_data.extra_fields:
-            agent_data.extra_fields.update(output.extra_fields)
-        else:
-            # Multi-round calls, only update the maximum max_global_steps.
-            max_global_steps = output.extra_fields.get("max_global_steps", None)
-            if max_global_steps:
-                agent_data.extra_fields["max_global_steps"] = max_global_steps
-            for key in SPEC_DECODE_EXTRA_KEYS:
-                if key in output.extra_fields and key in agent_data.extra_fields:
-                    agent_data.extra_fields[key] = int(agent_data.extra_fields[key]) + int(output.extra_fields[key])
+        self._merge_generation_extra_fields(agent_data, output.extra_fields)
 
         agent_data.assistant_turns += 1
         agent_data.response_ids = output.token_ids
@@ -591,6 +582,42 @@ class ToolAgentLoop(AgentLoopBase):
             return AgentState.PROCESSING_TOOLS
         else:
             return AgentState.TERMINATED
+
+    @staticmethod
+    def _safe_int_extra_field(value: Any) -> int | None:
+        if value is None:
+            return None
+        if hasattr(value, "shape") and tuple(value.shape) != ():
+            return None
+        if hasattr(value, "item"):
+            value = value.item()
+        if isinstance(value, (dict, list, tuple)):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _merge_generation_extra_fields(self, agent_data: AgentData, output_extra_fields: dict[str, Any]) -> None:
+        """Keep only scalar per-sample generation metadata in agent extra fields."""
+        if not output_extra_fields:
+            return
+
+        max_global_steps = self._safe_int_extra_field(output_extra_fields.get("max_global_steps"))
+        if max_global_steps is not None:
+            previous = self._safe_int_extra_field(agent_data.extra_fields.get("max_global_steps"))
+            agent_data.extra_fields["max_global_steps"] = max(max_global_steps, previous or max_global_steps)
+
+        min_global_steps = self._safe_int_extra_field(output_extra_fields.get("min_global_steps"))
+        if min_global_steps is not None:
+            previous = self._safe_int_extra_field(agent_data.extra_fields.get("min_global_steps"))
+            agent_data.extra_fields["min_global_steps"] = min(min_global_steps, previous or min_global_steps)
+
+        for key in SPEC_DECODE_EXTRA_KEYS:
+            value = self._safe_int_extra_field(output_extra_fields.get(key))
+            if value is None:
+                continue
+            agent_data.extra_fields[key] = int(agent_data.extra_fields.get(key, 0) or 0) + value
 
     async def _decode_current_response(self, response_ids: list[int]) -> str:
         return await self.loop.run_in_executor(
