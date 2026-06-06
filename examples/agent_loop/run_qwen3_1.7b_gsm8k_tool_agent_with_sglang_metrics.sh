@@ -78,6 +78,7 @@ echo "Sampling interval: ${SGLANG_METRICS_INTERVAL}s"
 	    export CUDA_VISIBLE_DEVICES
 	    export NGPUS_PER_NODE
 	    export TOTAL_STEPS
+	    export PROFILE_ROLLOUT_ONLY
 	    export SGLANG_PROMETHEUS_ENABLE=true
     bash examples/agent_loop/run_qwen3_1.7b_gsm8k_tool_agent.sh "$@"
 ) &

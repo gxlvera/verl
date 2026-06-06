@@ -16,6 +16,15 @@ DEFAULT_PATTERNS = (
     "num_queue_reqs",
     "gen_throughput",
     "decode_sum_seq_lens",
+    "num_used_tokens",
+    "token_usage",
+    "max_total_num_tokens",
+    # KV-pressure / preemption signals: capture any retract/preempt/evict
+    # counters SGLang exposes so we can pin down when the scheduler starts
+    # retracting decode batches under a full KV cache.
+    "retract",
+    "preempt",
+    "evict",
 )
 
 _STOP = False

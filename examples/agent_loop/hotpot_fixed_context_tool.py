@@ -4,18 +4,51 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import hashlib
+import logging
 import os
 import random
 
 from verl.tools.function_tool import function_tool
 
+logger = logging.getLogger(__name__)
+
 _SLEEP_RNG: random.Random | None = None
 _SLEEP_RNG_SEED: str | None = None
 
-_FIXED_CONTEXT_500_TOKENS = " ".join(
-    f"evidence_{idx:03d}" for idx in range(500)
-)
+# Target size (in model tokens) of the synthetic evidence passage returned by the
+# tool on every call. Defaults to 500 tokens. The text is sized with the model
+# tokenizer so it re-encodes to ~this many tokens (see _fixed_context).
+_RESPONSE_TOKENS = int(os.getenv("HOTPOT_TOOL_RESPONSE_TOKENS", "500") or "500")
+
+_TOKENIZER = None
+_TOKENIZER_DISABLED = False
+
+
+def _get_tokenizer():
+    """Lazily load the model tokenizer used to size tool responses by token count.
+
+    Path resolution: HOTPOT_TOOL_TOKENIZER, then MODEL_PATH. Returns None if no
+    path is configured or loading fails, in which case _fixed_context falls back
+    to a word-count approximation.
+    """
+    global _TOKENIZER, _TOKENIZER_DISABLED
+    if _TOKENIZER is not None or _TOKENIZER_DISABLED:
+        return _TOKENIZER
+    path = (os.getenv("HOTPOT_TOOL_TOKENIZER") or os.getenv("MODEL_PATH") or "").strip()
+    if not path:
+        _TOKENIZER_DISABLED = True
+        logger.warning("HOTPOT_TOOL_TOKENIZER/MODEL_PATH unset; tool response sized by word count.")
+        return None
+    try:
+        from transformers import AutoTokenizer
+
+        _TOKENIZER = AutoTokenizer.from_pretrained(path, trust_remote_code=False)
+    except Exception as exc:  # pragma: no cover - environment dependent
+        _TOKENIZER_DISABLED = True
+        logger.warning("Failed to load tokenizer from %s (%r); sizing tool response by word count.", path, exc)
+    return _TOKENIZER
 
 
 def _parse_sleep_distribution(spec: str) -> list[tuple[float, float]]:
@@ -72,10 +105,29 @@ def _sample_sleep_ms() -> float:
     return float(fixed_sleep) if fixed_sleep else 0.0
 
 
+@functools.lru_cache(maxsize=256)
 def _fixed_context(query: str | None, answer: str | None) -> str:
+    """Return a synthetic evidence passage of ~_RESPONSE_TOKENS model tokens.
+
+    The passage is deterministic and unique per (query, answer) so prefix caching
+    does not collapse different questions. When the tokenizer is available the
+    text is trimmed to exactly _RESPONSE_TOKENS tokens; otherwise it falls back to
+    a word-count approximation.
+    """
     key = f"{query or ''}\n{answer or ''}".encode("utf-8", errors="replace")
     digest = hashlib.sha1(key).hexdigest()[:10]
-    return " ".join(f"evidence_{digest}_{idx:03d}" for idx in range(500))
+    target = _RESPONSE_TOKENS
+
+    tokenizer = _get_tokenizer()
+    if tokenizer is not None:
+        # Build a unique filler that is comfortably longer than the target, then
+        # trim to exactly `target` token ids and decode back to text.
+        filler = " ".join(f"evidence_{digest}_{idx:04d}" for idx in range(target + 64))
+        token_ids = tokenizer(filler, add_special_tokens=False)["input_ids"][:target]
+        return tokenizer.decode(token_ids)
+
+    # Fallback: no tokenizer available; approximate by word count.
+    return " ".join(f"evidence_{digest}_{idx:04d}" for idx in range(target))
 
 
 _RETRIEVE_HOTPOT_CONTEXT_SCHEMA = {

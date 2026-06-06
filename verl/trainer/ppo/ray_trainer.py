@@ -1427,6 +1427,18 @@ class RayPPOTrainer:
         last_val_metrics = None
         self.max_steps_duration = 0
 
+        # Rollout-only profiling switch. When PROFILE_ROLLOUT_ONLY=1, skip every
+        # training-side computation (old/ref log-prob, critic values, critic/actor
+        # updates, weight sync, and rollout-replica sleep) while still running the
+        # rollout and collecting all rollout-side metrics. Intended for profiling
+        # the rollout path without paying for the actor update.
+        profile_rollout_only = os.getenv("PROFILE_ROLLOUT_ONLY", "0").strip().lower() in ("1", "true", "yes")
+        if profile_rollout_only:
+            print(
+                "[PROFILE_ROLLOUT_ONLY] Training is skipped: only rollout + rollout-side "
+                "metrics run; weights are never updated."
+            )
+
         prev_step_profile = False
         curr_step_profile = (
             self.global_steps in self.config.global_profiler.steps
@@ -1484,7 +1496,10 @@ class RayPPOTrainer:
                         if curr_step_profile:
                             self.llm_server_manager.start_profile()
                         combined_gen_output = self.async_rollout_manager.generate_sequences(combined_gen_batch)
-                        self.checkpoint_manager.sleep_replicas()
+                        if not profile_rollout_only:
+                            # Keep rollout replicas awake across steps; we never update
+                            # weights in rollout-only profiling, so no sleep/wake is needed.
+                            self.checkpoint_manager.sleep_replicas()
                         if curr_step_profile:
                             self.llm_server_manager.stop_profile()
 
@@ -1546,7 +1561,9 @@ class RayPPOTrainer:
                     #   Note: π_old computed once per data batch, serves as stable reference during mini-batch updates
                     rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
                     bypass_recomputing_logprobs = rollout_corr_config and rollout_corr_config.get("bypass_mode", False)
-                    if bypass_recomputing_logprobs:  # Use `rollout_log_probs`
+                    if profile_rollout_only:  # Rollout-only profiling: skip old_log_prob recompute.
+                        pass
+                    elif bypass_recomputing_logprobs:  # Use `rollout_log_probs`
                         from verl.trainer.ppo.rollout_corr_helper import apply_bypass_mode
 
                         apply_bypass_mode(
@@ -1587,16 +1604,17 @@ class RayPPOTrainer:
 
                                 metrics.update(calculate_debug_metrics(batch))
 
-                    assert "old_log_probs" in batch.batch, f'"old_log_prob" not in {batch.batch.keys()=}'
+                    if not profile_rollout_only:
+                        assert "old_log_probs" in batch.batch, f'"old_log_prob" not in {batch.batch.keys()=}'
 
-                    if self.use_reference_policy:
+                    if self.use_reference_policy and not profile_rollout_only:
                         # compute reference log_prob
                         with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
                             ref_log_prob = self._compute_ref_log_prob(batch)
                             batch = batch.union(ref_log_prob)
 
                     # compute values
-                    if self.use_critic:
+                    if self.use_critic and not profile_rollout_only:
                         with marked_timer("values", timing_raw, color="cyan"):
                             values = self._compute_values(batch)
                             batch = batch.union(values)
@@ -1649,14 +1667,17 @@ class RayPPOTrainer:
                         )
 
                     # update critic
-                    if self.use_critic:
+                    if self.use_critic and not profile_rollout_only:
                         with marked_timer("update_critic", timing_raw, color="pink"):
                             critic_output = self._update_critic(batch)
                         critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
                         metrics.update(critic_output_metrics)
 
                     # implement critic warmup
-                    if self.config.trainer.critic_warmup > self.global_steps:
+                    if profile_rollout_only:
+                        # Rollout-only profiling: skip actor update, checkpointing, and weight sync.
+                        pass
+                    elif self.config.trainer.critic_warmup > self.global_steps:
                         # Still in critic warmup, only update weights to wake up rollout replicas.
                         self.checkpoint_manager.update_weights(self.global_steps)
                     else:

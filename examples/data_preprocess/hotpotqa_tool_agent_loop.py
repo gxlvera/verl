@@ -72,7 +72,9 @@ if __name__ == "__main__":
     if args.local_dataset_path:
         dataset = datasets.load_dataset(args.local_dataset_path, "distractor")
     else:
-        dataset = datasets.load_dataset("hotpot_qa", "distractor")
+        # HF moved the canonical `hotpot_qa` dataset under the `hotpotqa` namespace;
+        # the legacy script-based id no longer resolves with datasets>=4.
+        dataset = datasets.load_dataset("hotpotqa/hotpot_qa", "distractor")
 
     train_dataset = dataset["train"]
     test_dataset = dataset["validation"] if "validation" in dataset else dataset["train"]

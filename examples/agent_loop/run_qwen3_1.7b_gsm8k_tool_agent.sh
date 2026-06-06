@@ -83,6 +83,8 @@ export HOTPOT_TOOL_SLEEP_SEED=${HOTPOT_TOOL_SLEEP_SEED:-${GSM8K_TOOL_SLEEP_SEED}
 export HOTPOT_TOOL_LATENCY_SECONDS_LIST=${HOTPOT_TOOL_LATENCY_SECONDS_LIST:-}
 export HOTPOT_MIN_TOOL_CALLS=${HOTPOT_MIN_TOOL_CALLS:-${GSM8K_MIN_TOOL_CALLS}}
 export HOTPOT_AUTO_TOOL_NAME=${HOTPOT_AUTO_TOOL_NAME:-}
+export HOTPOT_TOOL_RESPONSE_TOKENS=${HOTPOT_TOOL_RESPONSE_TOKENS:-500}
+export HOTPOT_TOOL_TOKENIZER=${HOTPOT_TOOL_TOKENIZER:-${MODEL_PATH}}
 export HOTPOT_SPECULATIVE_TOOL_PREFETCH=${HOTPOT_SPECULATIVE_TOOL_PREFETCH:-}
 export HOTPOT_SPECULATIVE_JSONL=${HOTPOT_SPECULATIVE_JSONL:-}
 export HOTPOT_MAIN_ENABLE_THINKING=${HOTPOT_MAIN_ENABLE_THINKING:-}
@@ -173,6 +175,8 @@ python3 -m verl.trainer.main_ppo \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_LATENCY_SECONDS_LIST="'${HOTPOT_TOOL_LATENCY_SECONDS_LIST}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MIN_TOOL_CALLS="'${HOTPOT_MIN_TOOL_CALLS}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_AUTO_TOOL_NAME="'${HOTPOT_AUTO_TOOL_NAME}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_RESPONSE_TOKENS="'${HOTPOT_TOOL_RESPONSE_TOKENS}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_TOKENIZER="'${HOTPOT_TOOL_TOKENIZER}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_SPECULATIVE_TOOL_PREFETCH="'${HOTPOT_SPECULATIVE_TOOL_PREFETCH}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_SPECULATIVE_JSONL="'${HOTPOT_SPECULATIVE_JSONL}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MAIN_ENABLE_THINKING="'${HOTPOT_MAIN_ENABLE_THINKING}'" \
@@ -185,6 +189,7 @@ python3 -m verl.trainer.main_ppo \
     +ray_kwargs.ray_init.runtime_env.env_vars.MOCK_BATCH_SIZE="'${MOCK_BATCH_SIZE}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_NUM_STARTS="'${PARTIAL_ASYNC_NUM_STARTS:-}'" \
     +ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_WARMUP_STEPS="'${PARTIAL_ASYNC_WARMUP_STEPS:-}'" \
+    +ray_kwargs.ray_init.runtime_env.env_vars.PROFILE_ROLLOUT_ONLY="'${PROFILE_ROLLOUT_ONLY:-}'" \
     trainer.logger='["console","tensorboard","wandb"]' \
     trainer.project_name="${PROJECT_NAME}" \
     trainer.experiment_name="${EXPERIMENT_NAME}" \
