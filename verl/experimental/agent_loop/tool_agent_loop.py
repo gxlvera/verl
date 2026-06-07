@@ -134,6 +134,11 @@ class ToolAgentLoop(AgentLoopBase):
         self.min_tool_calls = int(
             os.getenv("HOTPOT_MIN_TOOL_CALLS", os.getenv("GSM8K_MIN_TOOL_CALLS", "0")) or "0"
         )
+        # Hard cap on tool calls per trajectory (0 = unlimited). Once reached, the
+        # trajectory stops issuing further tool calls and terminates.
+        self.max_tool_calls = int(
+            os.getenv("HOTPOT_MAX_TOOL_CALLS", os.getenv("GSM8K_MAX_TOOL_CALLS", "0")) or "0"
+        )
         self.auto_tool_name = os.getenv(
             "HOTPOT_AUTO_TOOL_NAME", os.getenv("GSM8K_AUTO_TOOL_NAME", "calc_gsm8k_reward")
         )
@@ -158,6 +163,9 @@ class ToolAgentLoop(AgentLoopBase):
 
         self.prompt_length = self.rollout_config.prompt_length
         self.response_length = self.rollout_config.response_length
+        # Effective model context limit, used to gracefully truncate (terminate)
+        # over-long multi-turn trajectories instead of letting SGLang reject them.
+        self.max_model_len = self.rollout_config.max_model_len or (self.prompt_length + self.response_length)
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> AgentLoopOutput:
@@ -448,13 +456,26 @@ class ToolAgentLoop(AgentLoopBase):
         if self.tool_parser.stop_token_ids:
             stop_token_ids = list(set((sampling_params.get("stop_token_ids") or []) + self.tool_parser.stop_token_ids))
             sampling_params = {**sampling_params, "stop_token_ids": stop_token_ids}
+        # Graceful truncation: if the accumulated context is already at/over the
+        # model's context window, stop the trajectory instead of sending an
+        # over-length request that SGLang would reject with a ValueError.
+        context_budget = self.max_model_len - len(agent_data.prompt_ids) - 1
+        if context_budget <= 0:
+            return AgentState.TERMINATED
         if self.per_turn_response_length is not None:
             remaining_response = self.response_length - len(agent_data.response_mask)
             if remaining_response <= 0:
                 return AgentState.TERMINATED
             sampling_params = {
                 **sampling_params,
-                "max_new_tokens": min(self.per_turn_response_length, remaining_response),
+                "max_new_tokens": min(self.per_turn_response_length, remaining_response, context_budget),
+            }
+        else:
+            # Even without a per-turn cap, never request more than the remaining
+            # context budget so multi-turn trajectories cannot overflow.
+            sampling_params = {
+                **sampling_params,
+                "max_new_tokens": min(self.response_length, context_budget),
             }
 
         _decode_start = time.perf_counter()
@@ -522,6 +543,9 @@ class ToolAgentLoop(AgentLoopBase):
         else:
             agent_data.tool_calls = parsed_tool_calls
 
+        # Hard cap on tool calls: once reached, ignore further tool calls and stop.
+        if self.max_tool_calls and agent_data.tool_call_count >= self.max_tool_calls:
+            return AgentState.TERMINATED
         if agent_data.tool_calls:
             return AgentState.PROCESSING_TOOLS
         if agent_data.tool_call_count < self.min_tool_calls and self.auto_tool_name in active_tools:

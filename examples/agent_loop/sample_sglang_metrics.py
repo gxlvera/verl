@@ -25,6 +25,12 @@ DEFAULT_PATTERNS = (
     "retract",
     "preempt",
     "evict",
+    # Radix/prefix cache effectiveness: hit rate + cumulative cached/recomputed
+    # tokens let us see when a full KV cache starts thrashing the prefix cache
+    # and forcing re-prefill (recompute) on tool-call resume.
+    "cache_hit_rate",
+    "cached_tokens",
+    "prefill",
 )
 
 _STOP = False
