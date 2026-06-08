@@ -1,0 +1,8 @@
+jsonl=/home/tiger/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs768_rollout8_step1_rolloutonly_bssweep_20260606_150909_bs768_sglang_metrics.jsonl
+targets=['http://10.124.44.153:33313', 'http://10.124.44.153:33851', 'http://10.124.44.153:34229', 'http://10.124.44.153:34927', 'http://10.124.44.153:38535', 'http://10.124.44.153:42027', 'http://10.124.44.153:43663', 'http://10.124.44.153:47275']
+active_window=203.2,775.1
+points=5672
+running_max=3894.0
+running_zero_points=0
+png=/home/tiger/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs768_rollout8_step1_rolloutonly_bssweep_20260606_150909_bs768_sglang_metrics_running_reqs_active.png
+csv=/home/tiger/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs768_rollout8_step1_rolloutonly_bssweep_20260606_150909_bs768_sglang_metrics_running_reqs_active.csv

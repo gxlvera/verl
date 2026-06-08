@@ -1,0 +1,1162 @@
++ echo 'Saving full run log to /home/tiger/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357.log'
+Saving full run log to /home/tiger/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357.log
++ echo 'Tool config: gsm8k_sleep_ms=0, hotpot_sleep_ms=0, sleep_dist=<unset>, latency_seconds_list=<unset>, sleep_seed=<unset>, min_tool_calls=1, speculative_prefetch=<unset>, mock_batch_size=768, per_turn_max_response=500, max_model_len=4096, max_tool_response_length=12000, sglang_prometheus=true:9090'
+Tool config: gsm8k_sleep_ms=0, hotpot_sleep_ms=0, sleep_dist=<unset>, latency_seconds_list=<unset>, sleep_seed=<unset>, min_tool_calls=1, speculative_prefetch=<unset>, mock_batch_size=768, per_turn_max_response=500, max_model_len=4096, max_tool_response_length=12000, sglang_prometheus=true:9090
++ echo 'Determinism config: data_shuffle=False, data_seed=42, data_enable_thinking=False, actor_shuffle=False, actor_data_loader_seed=42, rollout_do_sample=False, temperature=0, top_p=1.0, top_k=-1'
+Determinism config: data_shuffle=False, data_seed=42, data_enable_thinking=False, actor_shuffle=False, actor_data_loader_seed=42, rollout_do_sample=False, temperature=0, top_p=1.0, top_k=-1
++ echo 'W&B run name: baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357'
+W&B run name: baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357
++ python3 -m verl.trainer.main_ppo algorithm.adv_estimator=grpo algorithm.use_kl_in_reward=False data.train_files=/home/tiger/data/hotpotqa_tool_agent/train.parquet data.val_files=/home/tiger/data/hotpotqa_tool_agent/test.parquet data.train_batch_size=8 data.max_prompt_length=4096 data.max_response_length=4096 data.shuffle=False data.seed=42 data.return_raw_chat=True data.filter_overlong_prompts=True data.truncation=error +data.apply_chat_template_kwargs.enable_thinking=False actor_rollout_ref.model.path=/home/tiger/models/Qwen3-8B actor_rollout_ref.model.use_remove_padding=True actor_rollout_ref.model.enable_gradient_checkpointing=True actor_rollout_ref.actor.optim.lr=1e-6 actor_rollout_ref.actor.ppo_mini_batch_size=4 actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 actor_rollout_ref.actor.shuffle=False actor_rollout_ref.actor.data_loader_seed=42 actor_rollout_ref.actor.use_kl_loss=False actor_rollout_ref.actor.kl_loss_coef=0.001 actor_rollout_ref.actor.kl_loss_type=low_var_kl actor_rollout_ref.actor.entropy_coeff=0 actor_rollout_ref.actor.fsdp_config.param_offload=False actor_rollout_ref.actor.fsdp_config.optimizer_offload=False actor_rollout_ref.rollout.name=sglang actor_rollout_ref.rollout.mode=async actor_rollout_ref.rollout.tensor_model_parallel_size=1 actor_rollout_ref.rollout.gpu_memory_utilization=0.6 actor_rollout_ref.rollout.n=2 actor_rollout_ref.rollout.do_sample=False actor_rollout_ref.rollout.temperature=0 actor_rollout_ref.rollout.top_p=1.0 actor_rollout_ref.rollout.top_k=-1 actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 actor_rollout_ref.rollout.multi_turn.enable=True actor_rollout_ref.rollout.multi_turn.format=hermes actor_rollout_ref.rollout.multi_turn.function_tool_path=examples/agent_loop/hotpot_fixed_context_tool.py actor_rollout_ref.rollout.agent.default_agent_loop=tool_agent actor_rollout_ref.rollout.prometheus.enable=true actor_rollout_ref.rollout.prometheus.port=9090 actor_rollout_ref.rollout.disable_log_stats=False actor_rollout_ref.rollout.max_model_len=4096 actor_rollout_ref.rollout.multi_turn.max_tool_response_length=12000 '+ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_TOOL_SLEEP_MS='\''0'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_TOOL_SLEEP_DIST='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_TOOL_SLEEP_SEED='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.GSM8K_MIN_TOOL_CALLS='\''1'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_MS='\''0'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_DIST='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_SLEEP_SEED='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_TOOL_LATENCY_SECONDS_LIST='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MIN_TOOL_CALLS='\''1'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_AUTO_TOOL_NAME='\''retrieve_hotpot_context'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_SPECULATIVE_TOOL_PREFETCH='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_SPECULATIVE_JSONL='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_MAIN_ENABLE_THINKING='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.HOTPOT_NON_THINKING_MAX_NEW_TOKENS='\'''\''' '+ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_RETRIEVAL_URL='\''http://127.0.0.1:8000/retrieve'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_TOPK='\''3'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_TIMEOUT='\''20'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.ONLINE_SEARCH_MAX_CHARS='\''12000'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH='\''500'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.MOCK_BATCH_SIZE='\''768'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_NUM_STARTS='\''9'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.PARTIAL_ASYNC_WARMUP_STEPS='\''0'\''' '+ray_kwargs.ray_init.runtime_env.env_vars.PROFILE_ROLLOUT_ONLY='\''1'\''' 'trainer.logger=["console","tensorboard","wandb"]' trainer.project_name=specTool trainer.experiment_name=baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357 trainer.n_gpus_per_node=8 trainer.nnodes=1 trainer.val_before_train=False trainer.save_freq=-1 trainer.test_freq=-1 trainer.total_training_steps=2
+Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+/home/tiger/verl/verl/trainer/main_ppo.py:380: FutureWarning: Warning: Function '__main__.main' is deprecated. Please use 'main_ppo.py is deprecated, and wil be replaced by main_ppo_sync.py in v0.8.0, please use main_ppo_sync.py instead.' instead.
+  main()
+[2026-06-06 12:44:09,129 I 741127 741127] gcs_rpc_client.h:671: successful connect gcs: 10.124.44.153:53287
+[2026-06-06 12:44:09,388 I 741127 741127] gcs_rpc_client.h:671: successful connect gcs: 10.124.44.153:53287
+2026-06-06 12:44:11,200	WARNING utils.py:597 -- Detecting docker specified CPUs. In previous versions of Ray, CPU detection in containers was incorrect. Please ensure that Ray has enough CPUs allocated. As a temporary workaround to revert to the prior behavior, set `RAY_USE_MULTIPROCESSING_CPU_COUNT=1` as an env var before starting Ray. Set the env var: `RAY_DISABLE_DOCKER_CPU_WARNING=1` to mute this warning.
+[2026-06-06 12:44:11,276 I 741127 741127] gcs_rpc_client.h:671: successful connect gcs: 10.124.44.153:53287
+[2026-06-06 12:44:11,277 I 741127 741127] gcs_rpc_client.h:671: successful connect gcs: 10.124.44.153:53287
+2026-06-06 12:44:11,291	INFO worker.py:1956 -- Started a local Ray instance. View the dashboard at [1m[32mhttp://127.0.0.1:8265 [39m[22m
+[2026-06-06 12:44:11,292 I 741127 741127] gcs_rpc_client.h:671: successful connect gcs: 10.124.44.153:53287
+(pid=753323, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/amp/autocast_mode.py:270: UserWarning: User provided device_type of 'cuda', but CUDA is not available. Disabling
+(pid=753323, ip=10.124.44.153)   warnings.warn(
+(pid=753323, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=753323, ip=10.124.44.153) W0606 12:44:20.869000 753323 torch/utils/cpp_extension.py:117] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+ray init kwargs: {'num_cpus': None, 'runtime_env': {'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN', 'VLLM_LOGGING_LEVEL': 'WARN', 'VLLM_ALLOW_RUNTIME_LORA_UPDATING': 'true', 'CUDA_DEVICE_MAX_CONNECTIONS': '1', 'VLLM_DISABLE_COMPILE_CACHE': '1', 'HCCL_HOST_SOCKET_PORT_RANGE': 'auto', 'HCCL_NPU_SOCKET_PORT_RANGE': 'auto', 'HSA_NO_SCRATCH_RECLAIM': '1', 'GSM8K_TOOL_SLEEP_MS': '0', 'GSM8K_TOOL_SLEEP_DIST': '', 'GSM8K_TOOL_SLEEP_SEED': '', 'GSM8K_MIN_TOOL_CALLS': '1', 'HOTPOT_TOOL_SLEEP_MS': '0', 'HOTPOT_TOOL_SLEEP_DIST': '', 'HOTPOT_TOOL_SLEEP_SEED': '', 'HOTPOT_TOOL_LATENCY_SECONDS_LIST': '', 'HOTPOT_MIN_TOOL_CALLS': '1', 'HOTPOT_AUTO_TOOL_NAME': 'retrieve_hotpot_context', 'HOTPOT_SPECULATIVE_TOOL_PREFETCH': '', 'HOTPOT_SPECULATIVE_JSONL': '', 'HOTPOT_MAIN_ENABLE_THINKING': '', 'HOTPOT_NON_THINKING_MAX_NEW_TOKENS': '', 'ONLINE_SEARCH_RETRIEVAL_URL': 'http://127.0.0.1:8000/retrieve', 'ONLINE_SEARCH_TOPK': '3', 'ONLINE_SEARCH_TIMEOUT': '20', 'ONLINE_SEARCH_MAX_CHARS': '12000', 'AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH': '500', 'MOCK_BATCH_SIZE': '768', 'PARTIAL_ASYNC_NUM_STARTS': '9', 'PARTIAL_ASYNC_WARMUP_STEPS': '0', 'PROFILE_ROLLOUT_ONLY': '1'}, 'working_dir': None}}
+(TaskRunner pid=753323, ip=10.124.44.153) TaskRunner hostname: n124-044-153, PID: 753323
+(TaskRunner pid=753323, ip=10.124.44.153) {'actor_rollout_ref': {'actor': {'_target_': 'verl.workers.config.FSDPActorConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'calculate_entropy': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'calculate_sum_pi_squared': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'checkpoint': {'_target_': 'verl.trainer.config.CheckpointConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'async_save': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'load_contents': ['model',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                   'optimizer',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                   'extra'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'mbridge_config': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'save_contents': ['model',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                   'optimizer',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                   'extra'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'strict': True},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'clip_ratio': 0.2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'clip_ratio_c': 3.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'clip_ratio_high': 0.2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'clip_ratio_low': 0.2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'data_loader_seed': 42,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'entropy_checkpointing': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'entropy_coeff': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'freeze_vision_tower': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'dtype': 'bfloat16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'entropy_checkpointing': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'forward_only': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'forward_prefetch': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'fsdp_size': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'full_determinism': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'model_dtype': 'fp32',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'offload_policy': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'optimizer_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'param_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'activation_observer': 'static_minmax',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'group_size': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'ignore_patterns': ['lm_head',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                              'embed_tokens',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                              're:.*mlp.gate$'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'mode': 'w4a16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'quantization_config_path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'reshard_after_forward': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'seed': 42,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'strategy': 'fsdp',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'use_orig_params': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'use_torch_compile': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'wrap_policy': {'min_num_params': 0}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'grad_clip': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'kl_loss_coef': 0.001,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'kl_loss_type': 'low_var_kl',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'loss_agg_mode': 'token-mean',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'loss_scale_factor': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'betas': [0.9, 0.999],
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'clip_grad': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'lr': 1e-06,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'lr_scheduler_type': 'constant',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'lr_warmup_steps': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'lr_warmup_steps_ratio': 0.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'min_lr_ratio': 0.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'num_cycles': 0.5,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'optimizer': 'AdamW',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'optimizer_impl': 'torch.optim',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'override_optimizer_config': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'total_training_steps': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'warmup_style': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'weight_decay': 0.01,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'zero_indexed_step': True},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'policy_loss': {'_target_': 'verl.workers.config.PolicyLossConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'clip_cov_lb': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'clip_cov_ratio': 0.0002,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'clip_cov_ub': 5.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'kl_cov_ratio': 0.0002,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'loss_mode': 'vanilla',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'ppo_kl_coef': 0.1},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'ppo_epochs': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'ppo_max_token_len_per_gpu': 16384,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'ppo_micro_batch_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'ppo_micro_batch_size_per_gpu': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'ppo_mini_batch_size': 4,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                               'all_ranks': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                               'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                               'ranks': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                               'save_path': 'outputs/profile',
+(TaskRunner pid=753323, ip=10.124.44.153)                                               'tool': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                               'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                       'analysis': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                       'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                       'discrete': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                       'level': 'level0'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                               'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                        'discrete': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                               'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                      'config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                      'stages': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                      'steps': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                      'strict': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                               'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                         'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                         'discrete': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                               'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'stack_depth': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'trace_alloc_max_entries': 100000}}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'qat': {'activation_observer': 'static_minmax',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'group_size': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'ignore_patterns': ['lm_head',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'embed_tokens',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              're:.*mlp.gate$'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'mode': 'w4a16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'quantization_config_path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'rollout_n': 2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'router_replay': {'_target_': 'verl.workers.config.RouterReplayConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                    'mode': 'disabled',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                    'record_file': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                    'replay_file': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'shuffle': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'strategy': 'fsdp',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'tau_neg': 1.05,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'tau_pos': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_dynamic_bsz': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_fused_kernels': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_kl_loss': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_prefix_grouper': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_remove_padding': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_torch_compile': True},
+(TaskRunner pid=753323, ip=10.124.44.153)                        'hybrid_engine': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                        'model': {'_target_': 'verl.workers.config.HFModelConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'custom_chat_template': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'enable_activation_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'enable_gradient_checkpointing': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'exclude_modules': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'external_lib': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'fused_kernel_options': {'impl_backend': 'torch'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'hf_config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'lora': {'a2a_experimental': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'adapter_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'alpha': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'dropout': 0.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'dropout_position': 'pre',
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'dtype': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'exclude_modules': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'freeze_language_model': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'freeze_vision_model': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'freeze_vision_projection': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'lora_A_init_method': 'xavier',
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'lora_B_init_method': 'zero',
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'merge': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'rank': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'target_modules': ['linear_qkv',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'linear_proj',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'linear_fc1',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'linear_fc2'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'type': 'lora'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'lora_adapter_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'lora_alpha': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'lora_rank': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'mtp': {'_target_': 'verl.workers.config.MtpConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'detach_encoder': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enable_rollout': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enable_train': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'method': 'mtp',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'mtp_loss_scaling_factor': 0.1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'num_speculative_tokens': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'speculative_algorithm': 'EAGLE',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'speculative_eagle_topk': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'speculative_num_draft_tokens': 4,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'speculative_num_steps': 3},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'override_config': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'path': '/home/tiger/models/Qwen3-8B',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'target_modules': 'all-linear',
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'tiled_mlp': {'enabled': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'num_shards': 4},
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'tokenizer_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'trust_remote_code': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_fused_kernels': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_liger': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_remove_padding': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                  'use_shm': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                        'nccl_timeout': 600,
+(TaskRunner pid=753323, ip=10.124.44.153)                        'ref': {'_target_': 'verl.workers.config.FSDPActorConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'entropy_checkpointing': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'dtype': 'bfloat16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'entropy_checkpointing': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'forward_only': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'forward_prefetch': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'fsdp_size': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'full_determinism': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'model_dtype': 'fp32',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'offload_policy': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'optimizer_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'param_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'activation_observer': 'static_minmax',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'group_size': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'ignore_patterns': ['lm_head',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                            'embed_tokens',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                            're:.*mlp.gate$'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'mode': 'w4a16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'quantization_config_path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'reshard_after_forward': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'seed': 42,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'strategy': 'fsdp',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'use_orig_params': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'use_torch_compile': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                'wrap_policy': {'min_num_params': 0}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                'log_prob_max_token_len_per_gpu': 16384,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'log_prob_micro_batch_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'log_prob_micro_batch_size_per_gpu': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'log_prob_use_dynamic_bsz': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'all_ranks': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'ranks': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'save_path': 'outputs/profile',
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'tool': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                     'analysis': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                     'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                     'discrete': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                     'level': 'level0'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'discrete': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                    'config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                    'stages': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                    'steps': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                    'strict': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                       'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                       'discrete': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                              'stack_depth': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                              'trace_alloc_max_entries': 100000}}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                'rollout_n': 2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'router_replay': {'_target_': 'verl.workers.config.RouterReplayConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'mode': 'disabled',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'record_file': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'replay_file': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                'strategy': 'fsdp',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'use_torch_compile': True},
+(TaskRunner pid=753323, ip=10.124.44.153)                        'rollout': {'_target_': 'verl.workers.config.RolloutConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'agent': {'_target_': 'verl.workers.config.AgentLoopConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'agent_loop_config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'custom_async_server': {'_target_': 'verl.workers.config.CustomAsyncServerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'name': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'default_agent_loop': 'tool_agent',
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'num_workers': 8},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'calculate_log_probs': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'checkpoint_engine': {'_target_': 'verl.workers.config.CheckpointEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'backend': 'naive',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'custom_backend_module': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'engine_kwargs': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                          'update_weights_bucket_megabytes': 2048},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'cudagraph_capture_sizes': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'data_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'disable_log_stats': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'disaggregation': {'bootstrap_port': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                       'decode_replicas': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                       'decode_tensor_model_parallel_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                       'enabled': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                       'ib_device': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                       'prefill_replicas': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                       'transfer_backend': 'nixl'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'do_sample': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'dtype': 'bfloat16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'enable_chunked_prefill': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'enable_prefix_caching': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'enable_rollout_routing_replay': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'enforce_eager': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'engine_kwargs': {'sglang': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                      'trtllm': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                      'vllm': {}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'expert_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'free_cache_engine': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'gpu_memory_utilization': 0.6,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'ignore_eos': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'layered_summon': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'load_format': 'dummy',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'log_prob_max_token_len_per_gpu': 16384,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'log_prob_micro_batch_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'log_prob_micro_batch_size_per_gpu': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'log_prob_use_dynamic_bsz': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'logprobs_mode': 'processed_logprobs',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'max_model_len': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'max_num_batched_tokens': 8192,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'max_num_seqs': 1024,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'mode': 'async',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'mtp': {'_target_': 'verl.workers.config.MtpConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'detach_encoder': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'enable_rollout': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'enable_train': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'method': 'mtp',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'mtp_loss_scaling_factor': 0.1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'num_speculative_tokens': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'speculative_algorithm': 'EAGLE',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'speculative_eagle_topk': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'speculative_num_draft_tokens': 4,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'speculative_num_steps': 3},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'multi_stage_wake_up': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'multi_turn': {'_target_': 'verl.workers.config.MultiTurnConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'enable': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'format': 'hermes',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'function_tool_path': 'examples/agent_loop/hotpot_fixed_context_tool.py',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'max_assistant_turns': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'max_parallel_calls': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'max_tool_response_length': 12000,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'max_user_turns': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'num_repeat_rollouts': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'tokenization_sanity_check_mode': 'strict',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'tool_config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'tool_response_truncate_side': 'middle',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'use_inference_chat_template': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'n': 2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'n_gpus_per_node': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'name': 'sglang',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'nnodes': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'over_sample_rate': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'pipeline_model_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'all_ranks': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'ranks': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'save_path': 'outputs/profile',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'tool': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                 'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                         'analysis': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                         'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                         'discrete': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                         'level': 'level0'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                 'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                        'config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                        'stages': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                        'steps': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                        'strict': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                 'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                           'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                           'discrete': False}}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'prometheus': {'_target_': 'verl.workers.config.PrometheusConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'enable': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'file': '/tmp/ray/session_latest/metrics/prometheus/prometheus.yml',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'port': 9090,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'served_model_name': '/home/tiger/models/Qwen3-8B'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'prompt_length': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'activation_observer': 'static_minmax',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'group_size': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'ignore_patterns': ['lm_head',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                'embed_tokens',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                're:.*mlp.gate$'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'mode': 'w4a16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                            'quantization_config_path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'quantization': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'quantization_config_file': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'response_length': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'scheduling_policy': 'fcfs',
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'skip': {'_target_': 'verl.workers.config.SkipConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'action': 'cache',
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'dump_dir': '~/.verl/rollout_dump',
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'max_dump_step': 1},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'skip_tokenizer_init': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'temperature': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'tensor_model_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'top_k': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'top_p': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'trace': {'_target_': 'verl.workers.config.TraceConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'backend': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'experiment_name': 'baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357',
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'max_samples_per_step_per_worker': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'project_name': 'specTool',
+(TaskRunner pid=753323, ip=10.124.44.153)                                              'token2text': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                    'val_kwargs': {'_target_': 'verl.workers.config.SamplingConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'do_sample': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'n': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'temperature': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'top_k': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'top_p': 1.0}}},
+(TaskRunner pid=753323, ip=10.124.44.153)  'algorithm': {'_target_': 'verl.trainer.config.AlgoConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                'adv_estimator': 'grpo',
+(TaskRunner pid=753323, ip=10.124.44.153)                'gamma': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                'kl_ctrl': {'_target_': 'verl.trainer.config.KLControlConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                            'horizon': 10000,
+(TaskRunner pid=753323, ip=10.124.44.153)                            'kl_coef': 0.001,
+(TaskRunner pid=753323, ip=10.124.44.153)                            'target_kl': 0.1,
+(TaskRunner pid=753323, ip=10.124.44.153)                            'type': 'fixed'},
+(TaskRunner pid=753323, ip=10.124.44.153)                'kl_penalty': 'kl',
+(TaskRunner pid=753323, ip=10.124.44.153)                'lam': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                'norm_adv_by_std_in_grpo': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                'pf_ppo': {'reweight_method': 'pow', 'weight_pow': 2.0},
+(TaskRunner pid=753323, ip=10.124.44.153)                'rollout_correction': {'bypass_mode': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                       'loss_type': 'ppo_clip',
+(TaskRunner pid=753323, ip=10.124.44.153)                                       'rollout_is': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                       'rollout_is_batch_normalize': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                       'rollout_is_threshold': 2.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                       'rollout_rs': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                       'rollout_rs_threshold': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                'use_kl_in_reward': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                'use_pf_ppo': False},
+(TaskRunner pid=753323, ip=10.124.44.153)  'critic': {'_target_': 'verl.workers.config.FSDPCriticConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)             'checkpoint': {'_target_': 'verl.trainer.config.CheckpointConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                            'async_save': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                            'load_contents': ['model', 'optimizer', 'extra'],
+(TaskRunner pid=753323, ip=10.124.44.153)                            'mbridge_config': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                            'save_contents': ['model', 'optimizer', 'extra']},
+(TaskRunner pid=753323, ip=10.124.44.153)             'cliprange_value': 0.5,
+(TaskRunner pid=753323, ip=10.124.44.153)             'data_loader_seed': 42,
+(TaskRunner pid=753323, ip=10.124.44.153)             'enable': None,
+(TaskRunner pid=753323, ip=10.124.44.153)             'forward_max_token_len_per_gpu': 32768,
+(TaskRunner pid=753323, ip=10.124.44.153)             'forward_micro_batch_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)             'forward_micro_batch_size_per_gpu': None,
+(TaskRunner pid=753323, ip=10.124.44.153)             'fsdp': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                      'dtype': 'bfloat16',
+(TaskRunner pid=753323, ip=10.124.44.153)                      'entropy_checkpointing': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'forward_only': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'forward_prefetch': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'fsdp_size': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'full_determinism': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'model_dtype': 'fp32',
+(TaskRunner pid=753323, ip=10.124.44.153)                      'offload_policy': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'optimizer_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'param_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                              'activation_observer': 'static_minmax',
+(TaskRunner pid=753323, ip=10.124.44.153)                              'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'group_size': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'ignore_patterns': ['lm_head',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'embed_tokens',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  're:.*mlp.gate$'],
+(TaskRunner pid=753323, ip=10.124.44.153)                              'mode': 'w4a16',
+(TaskRunner pid=753323, ip=10.124.44.153)                              'quantization_config_path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                      'reshard_after_forward': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'seed': 42,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'strategy': 'fsdp',
+(TaskRunner pid=753323, ip=10.124.44.153)                      'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'use_orig_params': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'use_torch_compile': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'wrap_policy': {'min_num_params': 0}},
+(TaskRunner pid=753323, ip=10.124.44.153)             'grad_clip': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)             'loss_agg_mode': 'token-mean',
+(TaskRunner pid=753323, ip=10.124.44.153)             'model': {'_target_': 'verl.workers.config.HFModelConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'custom_chat_template': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'enable_activation_offload': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'enable_gradient_checkpointing': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'exclude_modules': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'external_lib': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'fused_kernel_options': {'impl_backend': 'torch'},
+(TaskRunner pid=753323, ip=10.124.44.153)                       'hf_config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lora': {'a2a_experimental': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'adapter_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'alpha': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'dropout': 0.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'dropout_position': 'pre',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'dtype': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'exclude_modules': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                'freeze_language_model': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'freeze_vision_model': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'freeze_vision_projection': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'lora_A_init_method': 'xavier',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'lora_B_init_method': 'zero',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'merge': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'rank': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'target_modules': ['linear_qkv',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'linear_proj',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'linear_fc1',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'linear_fc2'],
+(TaskRunner pid=753323, ip=10.124.44.153)                                'type': 'lora'},
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lora_adapter_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lora_alpha': 16,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lora_rank': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'mtp': {'_target_': 'verl.workers.config.MtpConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                               'detach_encoder': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'enable_rollout': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'enable_train': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'method': 'mtp',
+(TaskRunner pid=753323, ip=10.124.44.153)                               'mtp_loss_scaling_factor': 0.1,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'num_speculative_tokens': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'speculative_algorithm': 'EAGLE',
+(TaskRunner pid=753323, ip=10.124.44.153)                               'speculative_eagle_topk': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'speculative_num_draft_tokens': 4,
+(TaskRunner pid=753323, ip=10.124.44.153)                               'speculative_num_steps': 3},
+(TaskRunner pid=753323, ip=10.124.44.153)                       'override_config': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                       'path': '~/models/deepseek-llm-7b-chat',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'target_modules': 'all-linear',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'tiled_mlp': {'enabled': False, 'num_shards': 4},
+(TaskRunner pid=753323, ip=10.124.44.153)                       'tokenizer_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'trust_remote_code': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'use_fused_kernels': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'use_liger': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'use_remove_padding': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'use_shm': False},
+(TaskRunner pid=753323, ip=10.124.44.153)             'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'betas': [0.9, 0.999],
+(TaskRunner pid=753323, ip=10.124.44.153)                       'clip_grad': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lr': 1e-05,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lr_scheduler_type': 'constant',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lr_warmup_steps': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'lr_warmup_steps_ratio': 0.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'min_lr_ratio': 0.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'num_cycles': 0.5,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'optimizer': 'AdamW',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'optimizer_impl': 'torch.optim',
+(TaskRunner pid=753323, ip=10.124.44.153)                       'override_optimizer_config': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'total_training_steps': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'warmup_style': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'weight_decay': 0.01,
+(TaskRunner pid=753323, ip=10.124.44.153)                       'zero_indexed_step': True},
+(TaskRunner pid=753323, ip=10.124.44.153)             'ppo_epochs': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)             'ppo_max_token_len_per_gpu': 32768,
+(TaskRunner pid=753323, ip=10.124.44.153)             'ppo_micro_batch_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)             'ppo_micro_batch_size_per_gpu': None,
+(TaskRunner pid=753323, ip=10.124.44.153)             'ppo_mini_batch_size': 4,
+(TaskRunner pid=753323, ip=10.124.44.153)             'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                          'all_ranks': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                          'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                          'ranks': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                          'save_path': 'outputs/profile',
+(TaskRunner pid=753323, ip=10.124.44.153)                          'tool': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                          'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'analysis': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'discrete': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                  'level': 'level0'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'discrete': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                 'config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                 'stages': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                 'steps': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                 'strict': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                    'contents': [],
+(TaskRunner pid=753323, ip=10.124.44.153)                                                    'discrete': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'stack_depth': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'trace_alloc_max_entries': 100000}}},
+(TaskRunner pid=753323, ip=10.124.44.153)             'rollout_n': 2,
+(TaskRunner pid=753323, ip=10.124.44.153)             'shuffle': False,
+(TaskRunner pid=753323, ip=10.124.44.153)             'strategy': 'fsdp',
+(TaskRunner pid=753323, ip=10.124.44.153)             'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)             'use_dynamic_bsz': False},
+(TaskRunner pid=753323, ip=10.124.44.153)  'data': {'apply_chat_template_kwargs': {'enable_thinking': False},
+(TaskRunner pid=753323, ip=10.124.44.153)           'audio_key': 'audios',
+(TaskRunner pid=753323, ip=10.124.44.153)           'custom_cls': {'name': None, 'path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)           'dataloader_num_workers': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)           'filter_overlong_prompts': True,
+(TaskRunner pid=753323, ip=10.124.44.153)           'filter_overlong_prompts_workers': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)           'function_tool_path': 'examples/agent_loop/hotpot_fixed_context_tool.py',
+(TaskRunner pid=753323, ip=10.124.44.153)           'image_key': 'images',
+(TaskRunner pid=753323, ip=10.124.44.153)           'image_patch_size': 14,
+(TaskRunner pid=753323, ip=10.124.44.153)           'max_prompt_length': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)           'max_response_length': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)           'mm_processor_kwargs': {},
+(TaskRunner pid=753323, ip=10.124.44.153)           'prompt_key': 'prompt',
+(TaskRunner pid=753323, ip=10.124.44.153)           'return_full_prompt': False,
+(TaskRunner pid=753323, ip=10.124.44.153)           'return_multi_modal_inputs': True,
+(TaskRunner pid=753323, ip=10.124.44.153)           'return_raw_chat': True,
+(TaskRunner pid=753323, ip=10.124.44.153)           'return_raw_input_ids': False,
+(TaskRunner pid=753323, ip=10.124.44.153)           'reward_fn_key': 'data_source',
+(TaskRunner pid=753323, ip=10.124.44.153)           'seed': 42,
+(TaskRunner pid=753323, ip=10.124.44.153)           'shuffle': False,
+(TaskRunner pid=753323, ip=10.124.44.153)           'tokenizer': None,
+(TaskRunner pid=753323, ip=10.124.44.153)           'tool_config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)           'train_batch_size': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)           'train_files': '/home/tiger/data/hotpotqa_tool_agent/train.parquet',
+(TaskRunner pid=753323, ip=10.124.44.153)           'train_max_samples': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)           'truncation': 'error',
+(TaskRunner pid=753323, ip=10.124.44.153)           'trust_remote_code': False,
+(TaskRunner pid=753323, ip=10.124.44.153)           'use_shm': False,
+(TaskRunner pid=753323, ip=10.124.44.153)           'val_batch_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)           'val_files': '/home/tiger/data/hotpotqa_tool_agent/test.parquet',
+(TaskRunner pid=753323, ip=10.124.44.153)           'val_max_samples': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)           'validation_shuffle': False,
+(TaskRunner pid=753323, ip=10.124.44.153)           'video_key': 'videos'},
+(TaskRunner pid=753323, ip=10.124.44.153)  'distillation': {'_target_': 'verl.workers.config.DistillationConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                   'distillation_loss': {'_target_': 'verl.workers.config.DistillationLossConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'clip_ratio': 0.2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'clip_ratio_high': 0.2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'clip_ratio_low': 0.2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'distillation_loss_coef': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'log_prob_min_clamp': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'loss_max_clamp': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'loss_mode': 'k3',
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'policy_loss_mode': 'vanilla',
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'topk': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'use_policy_gradient': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                         'use_task_rewards': True},
+(TaskRunner pid=753323, ip=10.124.44.153)                   'enabled': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                   'n_gpus_per_node': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)                   'nnodes': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                   'teacher_key': 'data_source',
+(TaskRunner pid=753323, ip=10.124.44.153)                   'teacher_models': {'teacher_model': {'_target_': 'verl.workers.config.DistillationTeacherModelConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'inference': {'_target_': 'verl.workers.config.RolloutConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'cudagraph_capture_sizes': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'data_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'disable_log_stats': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'dtype': 'bfloat16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'enable_chunked_prefill': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'enable_prefix_caching': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'enforce_eager': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'engine_kwargs': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'expert_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'free_cache_engine': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'gpu_memory_utilization': 0.5,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'limit_images': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'load_format': 'auto',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'max_model_len': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'max_num_batched_tokens': 8192,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'max_num_seqs': 1024,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'name': 'sglang',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'prompt_length': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'response_length': 4096,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'skip_tokenizer_init': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'temperature': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                      'tensor_model_parallel_size': 2},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'key': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'model_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                        'num_replicas': 0}}},
+(TaskRunner pid=753323, ip=10.124.44.153)  'global_profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                      'global_tool_config': {'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                      'controller_nsight_options': {'cuda-graph-trace': 'graph',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                    'cuda-memory-usage': 'true',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                    'trace': 'cuda,nvtx,cublas,ucx'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                      'discrete': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                      'worker_nsight_options': {'capture-range': 'cudaProfilerApi',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'capture-range-end': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'cuda-graph-trace': 'graph',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'cuda-memory-usage': 'true',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'kill': 'none',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                                'trace': 'cuda,nvtx,cublas,ucx'}},
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                    'config_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                    'stages': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                    'steps': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                                    'strict': False},
+(TaskRunner pid=753323, ip=10.124.44.153)                                             'torch_memory': {'context': 'all',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'kw_args': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'stack_depth': 32,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'stacks': 'all',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                              'trace_alloc_max_entries': 100000}},
+(TaskRunner pid=753323, ip=10.124.44.153)                      'profile_continuous_steps': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'save_path': 'outputs/profile',
+(TaskRunner pid=753323, ip=10.124.44.153)                      'steps': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                      'tool': None},
+(TaskRunner pid=753323, ip=10.124.44.153)  'model_engine': 'dp',
+(TaskRunner pid=753323, ip=10.124.44.153)  'ray_kwargs': {'ray_init': {'num_cpus': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'runtime_env': {'env_vars': {'AGENT_LOOP_PER_TURN_MAX_RESPONSE_LENGTH': '500',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'GSM8K_MIN_TOOL_CALLS': '1',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'GSM8K_TOOL_SLEEP_DIST': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'GSM8K_TOOL_SLEEP_MS': '0',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'GSM8K_TOOL_SLEEP_SEED': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_AUTO_TOOL_NAME': 'retrieve_hotpot_context',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_MAIN_ENABLE_THINKING': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_MIN_TOOL_CALLS': '1',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_NON_THINKING_MAX_NEW_TOKENS': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_SPECULATIVE_JSONL': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_SPECULATIVE_TOOL_PREFETCH': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_TOOL_LATENCY_SECONDS_LIST': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_TOOL_SLEEP_DIST': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_TOOL_SLEEP_MS': '0',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'HOTPOT_TOOL_SLEEP_SEED': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'MOCK_BATCH_SIZE': '768',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'ONLINE_SEARCH_MAX_CHARS': '12000',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'ONLINE_SEARCH_RETRIEVAL_URL': 'http://127.0.0.1:8000/retrieve',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'ONLINE_SEARCH_TIMEOUT': '20',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'ONLINE_SEARCH_TOPK': '3',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'PARTIAL_ASYNC_NUM_STARTS': '9',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'PARTIAL_ASYNC_WARMUP_STEPS': '0',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                           'PROFILE_ROLLOUT_ONLY': '1'}}},
+(TaskRunner pid=753323, ip=10.124.44.153)                 'timeline_json_file': None},
+(TaskRunner pid=753323, ip=10.124.44.153)  'reward': {'_target_': 'verl.workers.config.RewardConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)             'custom_reward_function': {'name': 'compute_score', 'path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)             'num_workers': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)             'reward_manager': {'_target_': 'verl.workers.config.reward.RewardManagerConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'module': {'_target_': 'verl.trainer.config.config.ModuleConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'name': 'custom_reward_manager',
+(TaskRunner pid=753323, ip=10.124.44.153)                                           'path': None},
+(TaskRunner pid=753323, ip=10.124.44.153)                                'name': 'naive',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'source': 'register'},
+(TaskRunner pid=753323, ip=10.124.44.153)             'reward_model': {'_target_': 'verl.workers.config.RewardModelConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                              'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'enable_resource_pool': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'model_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'n_gpus_per_node': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'nnodes': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)                              'rollout': {'_target_': 'verl.workers.config.RolloutConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'cudagraph_capture_sizes': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'data_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'disable_log_stats': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'disaggregation': {'bootstrap_port': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'decode_replicas': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'decode_tensor_model_parallel_size': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'enabled': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'ib_device': None,
+(TaskRunner pid=753323, ip=10.124.44.153) /home/tiger/verl/verl/trainer/main_ppo.py:258: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+(TaskRunner pid=753323, ip=10.124.44.153)   use_critic=need_critic(config),
+(TaskRunner pid=753323, ip=10.124.44.153) Setting TOKENIZERS_PARALLELISM=false for forked processes.
+(TaskRunner pid=753323, ip=10.124.44.153) WARNING:2026-06-06 12:44:24,597:Setting TOKENIZERS_PARALLELISM=false for forked processes.
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   0%|          | 0/90447 [00:00<?, ? examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   1%|          | 1000/90447 [00:01<02:08, 697.11 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   2%|▏         | 2000/90447 [00:02<01:34, 934.20 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   3%|▎         | 3000/90447 [00:03<01:22, 1053.83 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   4%|▍         | 4000/90447 [00:03<01:16, 1128.14 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   6%|▌         | 5000/90447 [00:04<01:12, 1176.22 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   7%|▋         | 6000/90447 [00:05<01:10, 1200.80 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   8%|▊         | 7000/90447 [00:06<01:08, 1218.48 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   9%|▉         | 8000/90447 [00:07<01:06, 1230.90 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  10%|▉         | 9000/90447 [00:07<01:05, 1239.03 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  11%|█         | 10000/90447 [00:08<01:04, 1239.31 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  12%|█▏        | 11000/90447 [00:09<01:04, 1241.06 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  13%|█▎        | 12000/90447 [00:10<01:13, 1060.67 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  14%|█▍        | 13000/90447 [00:11<01:09, 1114.33 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  15%|█▌        | 14000/90447 [00:12<01:06, 1153.53 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  17%|█▋        | 15000/90447 [00:13<01:03, 1183.08 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  18%|█▊        | 16000/90447 [00:13<01:01, 1205.25 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  19%|█▉        | 17000/90447 [00:14<01:00, 1223.74 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  20%|█▉        | 18000/90447 [00:15<00:58, 1229.67 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  21%|██        | 19000/90447 [00:16<00:57, 1233.53 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  22%|██▏       | 20000/90447 [00:17<00:56, 1241.32 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  23%|██▎       | 21000/90447 [00:17<00:55, 1241.84 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  24%|██▍       | 22000/90447 [00:18<00:55, 1241.14 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  25%|██▌       | 23000/90447 [00:19<00:54, 1241.25 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  27%|██▋       | 24000/90447 [00:20<00:53, 1245.27 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  28%|██▊       | 25000/90447 [00:21<00:52, 1241.54 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  29%|██▊       | 26000/90447 [00:22<00:58, 1110.51 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  30%|██▉       | 27000/90447 [00:22<00:55, 1153.15 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  31%|███       | 28000/90447 [00:23<00:52, 1185.21 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  32%|███▏      | 29000/90447 [00:24<00:50, 1208.97 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  33%|███▎      | 30000/90447 [00:25<00:49, 1221.80 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  34%|███▍      | 31000/90447 [00:26<00:48, 1227.05 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  35%|███▌      | 32000/90447 [00:26<00:47, 1243.03 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  36%|███▋      | 33000/90447 [00:27<00:46, 1234.05 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  38%|███▊      | 34000/90447 [00:28<00:45, 1234.97 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  39%|███▊      | 35000/90447 [00:29<00:44, 1241.55 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  40%|███▉      | 36000/90447 [00:30<00:43, 1242.20 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  41%|████      | 37000/90447 [00:30<00:42, 1251.48 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  42%|████▏     | 38000/90447 [00:31<00:41, 1255.19 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  43%|████▎     | 39000/90447 [00:32<00:40, 1258.29 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  44%|████▍     | 40000/90447 [00:33<00:40, 1256.63 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  45%|████▌     | 41000/90447 [00:34<00:43, 1129.23 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  46%|████▋     | 42000/90447 [00:35<00:41, 1162.55 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  48%|████▊     | 43000/90447 [00:36<00:39, 1189.19 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  49%|████▊     | 44000/90447 [00:36<00:38, 1205.23 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  50%|████▉     | 45000/90447 [00:37<00:37, 1222.67 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  51%|█████     | 46000/90447 [00:38<00:36, 1229.60 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  52%|█████▏    | 47000/90447 [00:39<00:35, 1230.46 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  53%|█████▎    | 48000/90447 [00:40<00:34, 1241.16 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  54%|█████▍    | 49000/90447 [00:40<00:33, 1250.82 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  55%|█████▌    | 50000/90447 [00:41<00:32, 1258.86 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  56%|█████▋    | 51000/90447 [00:42<00:31, 1259.65 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  57%|█████▋    | 52000/90447 [00:43<00:30, 1260.26 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  59%|█████▊    | 53000/90447 [00:43<00:29, 1258.98 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  60%|█████▉    | 54000/90447 [00:44<00:29, 1256.60 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  61%|██████    | 55000/90447 [00:45<00:31, 1126.11 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  62%|██████▏   | 56000/90447 [00:46<00:29, 1162.12 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  63%|██████▎   | 57000/90447 [00:47<00:28, 1193.01 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  64%|██████▍   | 58000/90447 [00:48<00:26, 1211.52 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  65%|██████▌   | 59000/90447 [00:49<00:25, 1222.87 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  66%|██████▋   | 60000/90447 [00:49<00:24, 1235.71 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  67%|██████▋   | 61000/90447 [00:50<00:23, 1240.55 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  69%|██████▊   | 62000/90447 [00:51<00:22, 1245.51 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  70%|██████▉   | 63000/90447 [00:52<00:21, 1248.12 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  71%|███████   | 64000/90447 [00:53<00:20, 1260.55 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  72%|███████▏  | 65000/90447 [00:53<00:20, 1268.63 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  73%|███████▎  | 66000/90447 [00:54<00:19, 1272.51 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  74%|███████▍  | 67000/90447 [00:55<00:18, 1262.81 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  75%|███████▌  | 68000/90447 [00:56<00:17, 1257.30 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  76%|███████▋  | 69000/90447 [00:56<00:17, 1260.34 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  77%|███████▋  | 70000/90447 [00:58<00:18, 1127.78 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  78%|███████▊  | 71000/90447 [00:58<00:16, 1165.41 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  80%|███████▉  | 72000/90447 [00:59<00:15, 1193.81 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  81%|████████  | 73000/90447 [01:00<00:14, 1216.72 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  82%|████████▏ | 74000/90447 [01:01<00:13, 1226.33 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  83%|████████▎ | 75000/90447 [01:02<00:12, 1239.32 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  84%|████████▍ | 76000/90447 [01:02<00:11, 1246.28 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  85%|████████▌ | 77000/90447 [01:03<00:10, 1258.42 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  86%|████████▌ | 78000/90447 [01:04<00:09, 1265.93 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  87%|████████▋ | 79000/90447 [01:05<00:09, 1267.60 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  88%|████████▊ | 80000/90447 [01:05<00:08, 1269.27 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  90%|████████▉ | 81000/90447 [01:06<00:07, 1264.92 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  91%|█████████ | 82000/90447 [01:07<00:06, 1260.54 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  92%|█████████▏| 83000/90447 [01:08<00:05, 1263.77 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  93%|█████████▎| 84000/90447 [01:09<00:05, 1264.02 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  94%|█████████▍| 85000/90447 [01:10<00:04, 1122.39 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  95%|█████████▌| 86000/90447 [01:11<00:03, 1156.24 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  96%|█████████▌| 87000/90447 [01:11<00:02, 1180.52 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  97%|█████████▋| 88000/90447 [01:12<00:02, 1198.79 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  98%|█████████▊| 89000/90447 [01:13<00:01, 1224.68 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1): 100%|█████████▉| 90000/90447 [01:14<00:00, 1235.20 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1): 100%|██████████| 90447/90447 [01:14<00:00, 1241.44 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'prefill_replicas': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                             'transfer_backend': 'nixl'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'do_sample': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'dtype': 'bfloat16',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enable_chunked_prefill': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enable_prefix_caching': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'enforce_eager': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'engine_kwargs': {},
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'expert_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'free_cache_engine': True,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'gpu_memory_utilization': 0.5,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'ignore_eos': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'layered_summon': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'limit_images': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'load_format': 'auto',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'max_model_len': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'max_num_batched_tokens': 8192,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'max_num_seqs': 1024,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'mtp': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'multi_stage_wake_up': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'n': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'name': '???',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'pipeline_model_parallel_size': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'prompt_length': 2048,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'quantization': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'quantization_config_file': None,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'response_length': 2048,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'scheduling_policy': 'fcfs',
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'skip_tokenizer_init': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'temperature': 1.0,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'tensor_model_parallel_size': 2,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'top_k': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)                                          'top_p': 1}},
+(TaskRunner pid=753323, ip=10.124.44.153)             'sandbox_fusion': {'_target_': 'verl.workers.config.SandboxFusionConfig',
+(TaskRunner pid=753323, ip=10.124.44.153)                                'max_concurrent': 64,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'memory_limit_mb': 1024,
+(TaskRunner pid=753323, ip=10.124.44.153)                                'url': None}},
+(TaskRunner pid=753323, ip=10.124.44.153)  'trainer': {'balance_batch': True,
+(TaskRunner pid=753323, ip=10.124.44.153)              'critic_warmup': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)              'default_hdfs_dir': None,
+(TaskRunner pid=753323, ip=10.124.44.153)              'default_local_dir': 'checkpoints/specTool/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357',
+(TaskRunner pid=753323, ip=10.124.44.153)              'del_local_ckpt_after_load': False,
+(TaskRunner pid=753323, ip=10.124.44.153)              'device': 'cuda',
+(TaskRunner pid=753323, ip=10.124.44.153)              'esi_redundant_time': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)              'experiment_name': 'baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs8_rollout2_step2_rolloutonly_smoke_20260606_124357',
+(TaskRunner pid=753323, ip=10.124.44.153)              'log_val_generations': 0,
+(TaskRunner pid=753323, ip=10.124.44.153)              'logger': ['console', 'tensorboard', 'wandb'],
+(TaskRunner pid=753323, ip=10.124.44.153)              'max_actor_ckpt_to_keep': None,
+(TaskRunner pid=753323, ip=10.124.44.153)              'max_critic_ckpt_to_keep': None,
+(TaskRunner pid=753323, ip=10.124.44.153)              'n_gpus_per_node': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)              'nnodes': 1,
+(TaskRunner pid=753323, ip=10.124.44.153)              'project_name': 'specTool',
+(TaskRunner pid=753323, ip=10.124.44.153)              'ray_wait_register_center_timeout': 300,
+(TaskRunner pid=753323, ip=10.124.44.153)              'resume_from_path': None,
+(TaskRunner pid=753323, ip=10.124.44.153)              'resume_mode': 'auto',
+(TaskRunner pid=753323, ip=10.124.44.153)              'rollout_data_dir': None,
+(TaskRunner pid=753323, ip=10.124.44.153)              'save_freq': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)              'test_freq': -1,
+(TaskRunner pid=753323, ip=10.124.44.153)              'total_epochs': 30,
+(TaskRunner pid=753323, ip=10.124.44.153)              'total_training_steps': 2,
+(TaskRunner pid=753323, ip=10.124.44.153)              'val_before_train': False,
+(TaskRunner pid=753323, ip=10.124.44.153)              'val_only': False,
+(TaskRunner pid=753323, ip=10.124.44.153)              'validation_data_dir': None},
+(TaskRunner pid=753323, ip=10.124.44.153)  'transfer_queue': {'backend': {'MooncakeStore': {'auto_init': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'device_name': '',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'global_segment_size': 4294967296,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'local_buffer_size': 1073741824,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'local_hostname': 'localhost',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'master_server_address': 'localhost:50124',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'metadata_server': 'localhost:50123',
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'protocol': 'tcp'},
+(TaskRunner pid=753323, ip=10.124.44.153)                                 'SimpleStorage': {'num_data_storage_units': 8,
+(TaskRunner pid=753323, ip=10.124.44.153)                                                   'total_storage_size': 100000},
+(TaskRunner pid=753323, ip=10.124.44.153)                                 'storage_backend': 'SimpleStorage'},
+(TaskRunner pid=753323, ip=10.124.44.153)                     'enable': False,
+(TaskRunner pid=753323, ip=10.124.44.153)                     'metrics': {'enabled': False, 'port': 0}}}
+(TaskRunner pid=753323, ip=10.124.44.153) [validate_config] All configuration checks passed successfully!
+(TaskRunner pid=753323, ip=10.124.44.153) Using dataset class: RLHFDataset
+(TaskRunner pid=753323, ip=10.124.44.153) dataset len: 90447
+(TaskRunner pid=753323, ip=10.124.44.153) filter dataset len: 90447
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1): 100%|██████████| 90447/90447 [01:14<00:00, 1210.58 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Setting TOKENIZERS_PARALLELISM=false for forked processes.
+(TaskRunner pid=753323, ip=10.124.44.153) WARNING:2026-06-06 12:45:40,605:Setting TOKENIZERS_PARALLELISM=false for forked processes.
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):   0%|          | 0/1024 [00:00<?, ? examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1):  98%|█████████▊| 1000/1024 [00:01<00:00, 717.19 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) Filtering prompts longer than 4096 tokens (num_proc=1): 100%|██████████| 1024/1024 [00:01<00:00, 671.00 examples/s]
+(TaskRunner pid=753323, ip=10.124.44.153) /home/tiger/verl/verl/trainer/main_ppo.py:299: FutureWarning: Warning: Class 'verl.trainer.ppo.ray_trainer.RayPPOTrainer' is deprecated. Please use 'main_ppo.py is deprecated, and wil be replaced by main_ppo_sync.py in v0.8.0, please use main_ppo_sync.py instead.' instead.
+(TaskRunner pid=753323, ip=10.124.44.153)   trainer = RayPPOTrainer(
+(TaskRunner pid=753323, ip=10.124.44.153) /home/tiger/verl/verl/trainer/ppo/ray_trainer.py:348: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+(TaskRunner pid=753323, ip=10.124.44.153)   self.use_critic = need_critic(self.config)
+(pid=765680, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765684, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765682, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765678, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765683, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765679, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765685, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(pid=765681, ip=10.124.44.153) Modular Diffusers is currently an experimental feature under active development. The API is subject to breaking changes in future releases.
+(WorkerDict pid=765684, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765684, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765684, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765678, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765678, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765678, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765678, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765680, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765680, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765680, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765680, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765685, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765685, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765685, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765683, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765683, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765683, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765683, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765682, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765682, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765682, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765682, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765684, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765681, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765681, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765681, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765681, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765679, ip=10.124.44.153) `torch_dtype` is deprecated! Use `dtype` instead!
+(WorkerDict pid=765679, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3ForCausalLM is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765679, ip=10.124.44.153) Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3Model is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+(WorkerDict pid=765685, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765679, ip=10.124.44.153) Loading checkpoint shards:   0%|          | 0/5 [00:00<?, ?it/s]
+(WorkerDict pid=765678, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.27s/it]
+(WorkerDict pid=765683, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.28s/it]
+(WorkerDict pid=765682, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.32s/it]
+(WorkerDict pid=765684, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.36s/it]
+(WorkerDict pid=765680, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.42s/it]
+(WorkerDict pid=765681, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.41s/it]
+(WorkerDict pid=765679, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:03<00:13,  3.50s/it]
+(WorkerDict pid=765685, ip=10.124.44.153) Loading checkpoint shards:  20%|██        | 1/5 [00:04<00:16,  4.08s/it]
+(WorkerDict pid=765683, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:09,  3.28s/it]
+(WorkerDict pid=765682, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:09,  3.27s/it]
+(WorkerDict pid=765684, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:09,  3.28s/it]
+(WorkerDict pid=765678, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:10,  3.43s/it]
+(WorkerDict pid=765680, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:10,  3.41s/it]
+(WorkerDict pid=765681, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:10,  3.41s/it]
+(WorkerDict pid=765679, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:06<00:10,  3.45s/it]
+(WorkerDict pid=765685, ip=10.124.44.153) Loading checkpoint shards:  40%|████      | 2/5 [00:07<00:11,  3.82s/it]
+(WorkerDict pid=765683, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:09<00:06,  3.24s/it]
+(WorkerDict pid=765682, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:09<00:06,  3.23s/it]
+(WorkerDict pid=765684, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:09<00:06,  3.24s/it]
+(WorkerDict pid=765678, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:10<00:06,  3.35s/it]
+(WorkerDict pid=765680, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:10<00:06,  3.38s/it]
+(WorkerDict pid=765681, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:10<00:06,  3.38s/it]
+(WorkerDict pid=765679, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:10<00:06,  3.42s/it]
+(WorkerDict pid=765685, ip=10.124.44.153) Loading checkpoint shards:  60%|██████    | 3/5 [00:11<00:07,  3.62s/it]
+(WorkerDict pid=765683, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:12<00:02,  2.98s/it]
+(WorkerDict pid=765682, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:12<00:02,  2.98s/it]
+(WorkerDict pid=765684, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:12<00:02,  2.98s/it]
+(WorkerDict pid=765680, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:12<00:03,  3.13s/it]
+(WorkerDict pid=765681, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:12<00:03,  3.13s/it]
+(WorkerDict pid=765679, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:13<00:03,  3.14s/it]
+(WorkerDict pid=765678, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:13<00:03,  3.28s/it]
+(WorkerDict pid=765683, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.28s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.68s/it]
+(WorkerDict pid=765682, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.28s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.67s/it]
+(WorkerDict pid=765684, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.28s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.68s/it]
+(WorkerDict pid=765685, ip=10.124.44.153) Loading checkpoint shards:  80%|████████  | 4/5 [00:13<00:03,  3.26s/it]
+(WorkerDict pid=765680, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.38s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.80s/it]
+(WorkerDict pid=765681, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.38s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:13<00:00,  2.79s/it]
+(WorkerDict pid=765679, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.39s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.81s/it]
+(WorkerDict pid=765678, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.45s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.84s/it]
+(WorkerDict pid=765685, ip=10.124.44.153) Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.45s/it]Loading checkpoint shards: 100%|██████████| 5/5 [00:14<00:00,  2.96s/it]
+(WorkerDict pid=765680, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765680, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765683, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765683, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765681, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765681, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765682, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765682, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765684, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765684, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765679, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765679, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765685, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765685, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765678, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/torch/distributed/fsdp/fully_sharded_data_parallel.py:675: FutureWarning: FSDP.state_dict_type() and FSDP.set_state_dict_type() are being deprecated. Please use APIs, get_state_dict() and set_state_dict(), which can support different parallelisms, FSDP1, FSDP2, DDP. API doc: https://pytorch.org/docs/stable/distributed.checkpoint.html#torch.distributed.checkpoint.state_dict.get_state_dict .Tutorial: https://pytorch.org/tutorials/recipes/distributed_checkpoint_recipe.html .
+(WorkerDict pid=765678, ip=10.124.44.153)   warnings.warn(
+(TaskRunner pid=753323, ip=10.124.44.153) Using dataset class: RLHFDataset
+(TaskRunner pid=753323, ip=10.124.44.153) dataset len: 1024
+(TaskRunner pid=753323, ip=10.124.44.153) filter dataset len: 1024
+(TaskRunner pid=753323, ip=10.124.44.153) Size of train dataloader: 11305, Size of val dataloader: 1
+(TaskRunner pid=753323, ip=10.124.44.153) Total training steps: 2
+(TaskRunner pid=753323, ip=10.124.44.153) colocated worker base class <class 'verl.single_controller.base.worker.Worker'>
+(WorkerDict pid=765683, ip=10.124.44.153) [Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765684, ip=10.124.44.153) [Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765680, ip=10.124.44.153) [Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765681, ip=10.124.44.153) [Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765678, ip=10.124.44.153) [Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765685, ip=10.124.44.153) [Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765682, ip=10.124.44.153) [Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765679, ip=10.124.44.153) [Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765683, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765683, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765683, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765684, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765684, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765684, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765682, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765682, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765682, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765680, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765680, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765680, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765681, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765681, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765681, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765679, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765679, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765679, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765678, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765678, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765678, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765678, ip=10.124.44.153) Qwen3ForCausalLM contains 8.19B parameters
+(WorkerDict pid=765685, ip=10.124.44.153) Monkey patch state_dict in AutoModelForCausalLMWithValueHead. 
+(WorkerDict pid=765685, ip=10.124.44.153) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=765685, ip=10.124.44.153) Skipping monkey patch for Qwen3ForCausalLM as use_fused_kernels is False or fused_kernels_backend is torch
+(WorkerDict pid=765678, ip=10.124.44.153) Before FSDP, memory allocated (GB): 0.00, memory reserved (GB): 0.00, device memory used/total (GB): 0.41/79.15
+(WorkerDict pid=765683, ip=10.124.44.153) [Gloo] Rank 5 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765683, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765683, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765684, ip=10.124.44.153) [Gloo] Rank 7 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765684, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765684, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765680, ip=10.124.44.153) [Gloo] Rank 2 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765680, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765680, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765681, ip=10.124.44.153) [Gloo] Rank 3 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765681, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765681, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765678, ip=10.124.44.153) After FSDP, memory allocated (GB): 3.81, memory reserved (GB): 18.74, device memory used/total (GB): 19.82/79.15
+(WorkerDict pid=765678, ip=10.124.44.153) Total steps: 2, num_warmup_steps: 0
+(WorkerDict pid=765678, ip=10.124.44.153) NCCL version 2.27.5+cuda12.9
+(WorkerDict pid=765678, ip=10.124.44.153) [Gloo] Rank 0 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765678, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765678, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765685, ip=10.124.44.153) [Gloo] Rank 6 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765685, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765685, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765682, ip=10.124.44.153) [Gloo] Rank 4 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765682, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765682, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765679, ip=10.124.44.153) [Gloo] Rank 1 is connected to 7 peer ranks. Expected number of connected peer ranks is : 7
+(WorkerDict pid=765679, ip=10.124.44.153) [Gloo] Rank 0 is connected to 0 peer ranks. Expected number of connected peer ranks is : 0
+(WorkerDict pid=765678, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765678, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765678, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765678, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765678, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765678, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765680, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765680, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765680, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765680, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765680, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765680, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765685, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765685, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765685, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765685, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765685, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765685, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765683, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765683, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765683, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765683, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765683, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765683, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765682, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765682, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765682, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765682, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765682, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765682, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765684, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765684, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765684, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765684, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765684, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765684, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765681, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765681, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765681, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765681, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765681, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765681, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765679, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765679, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765679, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765679, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765679, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(WorkerDict pid=765679, ip=10.124.44.153)   warnings.warn(
+(WorkerDict pid=765678, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765678, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765680, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765680, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765685, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765685, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765683, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765683, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765682, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765682, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765684, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765684, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765681, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765681, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(WorkerDict pid=765679, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(WorkerDict pid=765679, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(TaskRunner pid=753323, ip=10.124.44.153) /sgl-workspace/sglang/python/sglang/srt/layers/attention/fla/utils.py:212: UserWarning: Triton is not supported on current platform, roll back to CPU.
+(TaskRunner pid=753323, ip=10.124.44.153)   warnings.warn(
+(TaskRunner pid=753323, ip=10.124.44.153) /sgl-workspace/sglang/python/sglang/srt/layers/quantization/awq.py:76: UserWarning: Only CUDA, HIP and XPU support AWQ currently.
+(TaskRunner pid=753323, ip=10.124.44.153)   warnings.warn(f"Only CUDA, HIP and XPU support AWQ currently.")
+(TaskRunner pid=753323, ip=10.124.44.153) /sgl-workspace/sglang/python/sglang/srt/layers/quantization/gguf.py:47: UserWarning: Only CUDA support GGUF quantization currently.
+(TaskRunner pid=753323, ip=10.124.44.153)   warnings.warn(f"Only CUDA support GGUF quantization currently.")
+(TaskRunner pid=753323, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/logs/v1/logs_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(TaskRunner pid=753323, ip=10.124.44.153)   warnings.warn(
+(TaskRunner pid=753323, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/metrics/v1/metrics_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(TaskRunner pid=753323, ip=10.124.44.153)   warnings.warn(
+(TaskRunner pid=753323, ip=10.124.44.153) /usr/local/lib/python3.12/dist-packages/opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py:21: RuntimeWarning: The grpc package installed is at version 1.59.5, but the generated code in opentelemetry/proto/collector/trace/v1/trace_service_pb2_grpc.py depends on grpcio>=1.63.2. Please upgrade your grpc module to grpcio>=1.63.2 or downgrade your generated code using grpcio-tools<=1.59.5. This warning will become an error in 1.65.0, scheduled for release on June 25, 2024.
+(TaskRunner pid=753323, ip=10.124.44.153)   warnings.warn(
+(TaskRunner pid=753323, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(TaskRunner pid=753323, ip=10.124.44.153) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.

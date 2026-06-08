@@ -1,0 +1,8 @@
+jsonl=/home/tiger/verl/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs192_rollout8_step1_thinking_15k_4tool_20260608_095545_bs192_sglang_metrics.jsonl
+targets=['http://10.124.45.22:35193', 'http://10.124.45.22:36633', 'http://10.124.45.22:38021', 'http://10.124.45.22:38471', 'http://10.124.45.22:39283', 'http://10.124.45.22:40319', 'http://10.124.45.22:46821', 'http://10.124.45.22:48019']
+active_window=203.5,294.9
+points=915
+running_max=1340.0
+running_zero_points=0
+png=/home/tiger/verl/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs192_rollout8_step1_thinking_15k_4tool_20260608_095545_bs192_sglang_metrics_running_reqs_active.png
+csv=/home/tiger/verl/logs/baseline_hotpotqa_qwen3_8b_sleep0_toolcalls1_bs192_rollout8_step1_thinking_15k_4tool_20260608_095545_bs192_sglang_metrics_running_reqs_active.csv
