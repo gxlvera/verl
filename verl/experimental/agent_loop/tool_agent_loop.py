@@ -118,6 +118,15 @@ class AgentData:
 
 @register("tool_agent")
 class ToolAgentLoop(AgentLoopBase):
+    # Process-local long-tail awareness. Every active trajectory (running run())
+    # in this worker process increments _active_count; it is decremented when the
+    # trajectory finishes. _active_peak tracks the high-water mark so we can define
+    # the "tail" relative to this worker's own chunk size. _shadow_fired counts how
+    # many shadow requests this process has launched.
+    _active_count: int = 0
+    _active_peak: int = 0
+    _shadow_fired: int = 0
+
     def __init__(self, *args, tools: Optional[ToolListWrap] = None, **kwargs):
         """Initialize the tool agent loop.
 
@@ -150,10 +159,51 @@ class ToolAgentLoop(AgentLoopBase):
             "yes",
         }
         self.speculative_jsonl = os.getenv("HOTPOT_SPECULATIVE_JSONL", "").strip()
+        # When set, append one JSON record per assistant generation turn capturing
+        # the SGLang waiting-queue time (extra_fields["sglang_queue_time_s"]) so we
+        # can study, e.g., how the 2nd-turn (first tool-call return) requests queue
+        # before their prefill. A per-pid suffix avoids multi-process write races.
+        self.queue_time_jsonl = os.getenv("AGENT_LOOP_QUEUE_TIME_JSONL", "").strip()
+        self._queue_time_fh = None
+        if self.queue_time_jsonl:
+            try:
+                path = f"{self.queue_time_jsonl}.{os.getpid()}.jsonl"
+                self._queue_time_fh = open(path, "a", buffering=1)
+            except Exception:
+                self._queue_time_fh = None
         self.main_enable_thinking = os.getenv(
             "HOTPOT_MAIN_ENABLE_THINKING", "true" if self.speculative_prefetch else ""
         ).strip()
         self.non_thinking_max_new_tokens = int(os.getenv("HOTPOT_NON_THINKING_MAX_NEW_TOKENS", "0") or "0")
+        # Simple "shadow" load: when set, every assistant generation turn fires an
+        # extra parallel enable_thinking=False request for the same sample. Its
+        # output is discarded -- no tool-call matching / prefetch / reuse. It only
+        # exists to double the concurrent request load so we can measure the effect
+        # on rollout throughput and SGLang scheduling.
+        self.shadow_nonthinking = os.getenv("HOTPOT_SHADOW_NONTHINKING", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        # Tail-only shadow: instead of always shadowing (above), only fire an extra
+        # enable_thinking=False shadow request for a sample once (a) it has reached a
+        # late turn (turn >= shadow_tail_min_turn) AND (b) this worker process is in
+        # its long tail -- i.e. the number of still-running trajectories has dropped
+        # to/below a threshold, which means SGLang load + KV are low and there is
+        # spare decode bandwidth to soak up. This targets only the stragglers.
+        self.shadow_tail = os.getenv("HOTPOT_SHADOW_TAIL", "").strip().lower() in {"1", "true", "yes"}
+        self.shadow_tail_min_turn = int(os.getenv("HOTPOT_SHADOW_TAIL_MIN_TURN", "3") or "3")
+        # Absolute active-trajectory ceiling for "in tail"; if unset/0, fall back to
+        # a fraction of the per-worker peak active count.
+        self.shadow_tail_active_max = int(os.getenv("HOTPOT_SHADOW_TAIL_ACTIVE_MAX", "0") or "0")
+        self.shadow_tail_active_frac = float(os.getenv("HOTPOT_SHADOW_TAIL_ACTIVE_FRAC", "0.25") or "0.25")
+        self.shadow_jsonl = os.getenv("HOTPOT_SHADOW_JSONL", "").strip()
+        self._shadow_fh = None
+        if self.shadow_jsonl:
+            try:
+                self._shadow_fh = open(f"{self.shadow_jsonl}.{os.getpid()}.jsonl", "a", buffering=1)
+            except Exception:
+                self._shadow_fh = None
 
         tool_list = tools.tools if tools else []
         self.tools = {tool.name: tool for tool in tool_list}
@@ -213,6 +263,8 @@ class ToolAgentLoop(AgentLoopBase):
 
         # State machine loop
         state = AgentState.PENDING
+        ToolAgentLoop._active_count += 1
+        ToolAgentLoop._active_peak = max(ToolAgentLoop._active_peak, ToolAgentLoop._active_count)
         try:
             while state != AgentState.TERMINATED:
                 if state == AgentState.PENDING:
@@ -225,6 +277,7 @@ class ToolAgentLoop(AgentLoopBase):
                     logger.error(f"Invalid state: {state}")
                     state = AgentState.TERMINATED
         finally:
+            ToolAgentLoop._active_count -= 1
             agent_data.set_worker_state("finished")
             for task in agent_data._speculative_background_tasks:
                 if not task.done():
@@ -306,6 +359,80 @@ class ToolAgentLoop(AgentLoopBase):
                 int(params.get("max_new_tokens", self.non_thinking_max_new_tokens)),
             )
         return params
+
+    def _should_shadow_tail(self, turn_index: int) -> bool:
+        """Tail-only shadow gate (VERL-side long-tail awareness).
+
+        Returns True iff tail-shadow mode is on, this generation is at a late turn
+        (>= shadow_tail_min_turn), and the worker process is currently in its long
+        tail -- i.e. few trajectories remain active, which implies SGLang load and
+        KV occupancy are low and there is spare decode bandwidth.
+        """
+        if not self.shadow_tail:
+            return False
+        if turn_index < self.shadow_tail_min_turn:
+            return False
+        if self.shadow_tail_active_max > 0:
+            ceiling = self.shadow_tail_active_max
+        else:
+            ceiling = max(1, int(self.shadow_tail_active_frac * ToolAgentLoop._active_peak))
+        return ToolAgentLoop._active_count <= ceiling
+
+    def _log_shadow_fire(self, agent_data: AgentData, turn_index: int) -> None:
+        ToolAgentLoop._shadow_fired += 1
+        if self._shadow_fh is None:
+            return
+        try:
+            self._shadow_fh.write(
+                json.dumps(
+                    {
+                        "request_id": agent_data.request_id,
+                        "turn": int(turn_index),
+                        "active_at_fire": ToolAgentLoop._active_count,
+                        "active_peak": ToolAgentLoop._active_peak,
+                        "prompt_len": len(agent_data.prompt_ids),
+                    }
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+
+    async def _generate_with_shadow(self, agent_data: AgentData, sampling_params: dict[str, Any]) -> "TokenOutput":
+        """Fire the main (thinking) generation plus one parallel enable_thinking=False
+        shadow request for the same turn, wait for both, and return ONLY the main
+        output. The shadow result is discarded -- this is intentionally dumb: no
+        tool-call matching, prefetch, or reuse. It exists solely to add concurrent
+        load (one extra request per assistant turn per sample) so we can observe how
+        rollout throughput and SGLang scheduling react.
+        """
+        turn_index = agent_data.assistant_turns + 1
+        self._log_shadow_fire(agent_data, turn_index)
+        main_task = asyncio.create_task(
+            self.server_manager.generate(
+                request_id=agent_data.request_id,
+                prompt_ids=agent_data.prompt_ids,
+                sampling_params=sampling_params,
+                image_data=agent_data.image_data,
+                video_data=agent_data.video_data,
+                audio_data=agent_data.audio_data,
+                mm_processor_kwargs=agent_data.mm_processor_kwargs,
+            )
+        )
+        shadow_prompt_ids = await self._build_non_thinking_prompt_ids(agent_data)
+        shadow_task = asyncio.create_task(
+            self.server_manager.generate(
+                request_id=f"{agent_data.request_id}-shadow-{turn_index}",
+                prompt_ids=shadow_prompt_ids,
+                sampling_params=self._non_thinking_sampling_params(sampling_params),
+                image_data=agent_data.image_data,
+                video_data=agent_data.video_data,
+                audio_data=agent_data.audio_data,
+                mm_processor_kwargs=agent_data.mm_processor_kwargs,
+            )
+        )
+        output, _shadow_output = await asyncio.gather(main_task, shadow_task)
+        return output
 
     async def _build_non_thinking_prompt_ids(self, agent_data: AgentData) -> list[int]:
         schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
@@ -448,6 +575,28 @@ class ToolAgentLoop(AgentLoopBase):
         agent_data.speculative_records.append(record)
         return output, main_calls, record
 
+    def _record_queue_time(self, agent_data: AgentData, output: "TokenOutput", turn_index: int) -> None:
+        """Append the SGLang waiting-queue time for the generation that just ran.
+
+        No-op unless AGENT_LOOP_QUEUE_TIME_JSONL is set. queue_time_s comes from
+        SGLang meta_info["queue_time"] (forward_entry_time - wait_queue_entry_time).
+        """
+        if self._queue_time_fh is None:
+            return
+        try:
+            qt = (output.extra_fields or {}).get("sglang_queue_time_s")
+            record = {
+                "request_id": agent_data.request_id,
+                "turn": int(turn_index),
+                "queue_time_s": float(qt) if qt is not None else None,
+                "prompt_len": len(agent_data.prompt_ids),
+                "response_tokens": len(output.token_ids),
+                "global_steps": (output.extra_fields or {}).get("global_steps"),
+            }
+            self._queue_time_fh.write(json.dumps(record) + "\n")
+        except Exception:
+            pass
+
     async def _handle_generating_state(
         self, agent_data: AgentData, sampling_params: dict[str, Any], ignore_termination: bool = False
     ) -> AgentState:
@@ -482,10 +631,14 @@ class ToolAgentLoop(AgentLoopBase):
         agent_data.set_worker_state("ready_to_llm")
         with simple_timer("generate_sequences", agent_data.metrics):
             agent_data.set_worker_state("llm_inflight")
+            turn_index = agent_data.assistant_turns + 1
             if self.speculative_prefetch:
                 output, parsed_tool_calls, _spec_record = await self._generate_main_and_speculative(
                     agent_data, sampling_params
                 )
+            elif self.shadow_nonthinking or self._should_shadow_tail(turn_index):
+                output = await self._generate_with_shadow(agent_data, sampling_params)
+                parsed_tool_calls = None
             else:
                 output: TokenOutput = await self.server_manager.generate(
                     request_id=agent_data.request_id,
@@ -499,6 +652,9 @@ class ToolAgentLoop(AgentLoopBase):
                 parsed_tool_calls = None
         agent_data.set_worker_state(None)
         agent_data.per_turn_decode.append(time.perf_counter() - _decode_start)
+        # Turn index of the generation that just completed (1-based): turn 1 is the
+        # initial question, turn 2 is the first tool-call return, etc.
+        self._record_queue_time(agent_data, output, turn_index=agent_data.assistant_turns + 1)
         # first time to set num_preempted
         if agent_data.metrics.get("num_preempted") is None:
             agent_data.metrics["num_preempted"] = output.num_preempted if output.num_preempted is not None else -1

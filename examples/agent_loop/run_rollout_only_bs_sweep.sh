@@ -66,6 +66,12 @@ for bs in ${BS_GRID}; do
     # Unique run id per batch size so logs/plots/metrics don't collide.
     export RUN_ID="${SWEEP_TAG}_bs${bs}"
 
+    # Optional per-turn SGLang queue-time logging, one prefix per batch size so
+    # the JSONL (suffixed with worker pid by the agent loop) never mixes runs.
+    if [[ -n "${QUEUE_TIME_DIR:-}" ]]; then
+        export AGENT_LOOP_QUEUE_TIME_JSONL="${QUEUE_TIME_DIR}/qtime_${RUN_ID}"
+    fi
+
     set +e
     bash examples/agent_loop/run_qwen3_8b_hotpotqa_tool_latency_partial_and_baseline_grid.sh
     status=$?

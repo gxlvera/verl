@@ -656,6 +656,15 @@ class SGLangHttpServer:
                 )
 
         extra_fields = {"global_steps": self.global_steps}
+        # SGLang populates meta_info["queue_time"] (= forward_entry_time -
+        # wait_queue_entry_time, i.e. time spent in the waiting queue before the
+        # request's first forward/prefill) whenever enable_metrics is on, which
+        # async_sglang_server always forces. Surface it so the agent loop can
+        # attribute per-turn queueing to specific turns (e.g. the 2nd-turn
+        # tool-call return).
+        queue_time = meta_info.get("queue_time")
+        if queue_time is not None:
+            extra_fields["sglang_queue_time_s"] = float(queue_time)
         if prompt_logprobs is not None:
             _extract_prompt_logprobs_sglang(
                 meta_info=meta_info,
