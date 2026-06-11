@@ -16,6 +16,8 @@ import contextlib
 import json
 import logging
 import os
+import random
+import re
 import time
 from enum import Enum
 from typing import Any, Optional
@@ -73,6 +75,16 @@ class AgentData:
         state_sample_id: Optional[int] = None,
     ):
         self.messages = messages
+        # Parallel message history for the COMPRESSED non-thinking shadow prompt:
+        # system + user + (assistant tool_call WITHOUT thinking) + (tool response)
+        # alternating, so the non-thinking shadow never sees the main model's prior
+        # <think> traces. Maintained only when HOTPOT_SHADOW_COMPRESS is on.
+        self.nonthinking_msgs: list[dict[str, Any]] = [dict(m) for m in messages]
+        # Parallel accumulated token_ids for the COMPRESSED direct-token shadow:
+        # mirrors prompt_ids but with each prior assistant turn's <think>...</think>
+        # span removed at the token level. Maintained only when shadow_compress +
+        # shadow_direct_tokens are on.
+        self.shadow_prompt_ids: list[int] = []
         self.image_data = image_data
         self.video_data = video_data
         self.audio_data = audio_data
@@ -105,6 +117,13 @@ class AgentData:
         self.prefetched_tool_responses: dict[str, tuple[ToolResponse, float, dict]] = {}
         self.speculative_records: list[dict[str, Any]] = []
         self._speculative_background_tasks: list[asyncio.Task] = []
+        # Simulated-speculation state. _spec_hit is decided once per sample (None
+        # until the sample first fires a tail shadow): True => this sample acts on
+        # the non-thinking shadow by launching its tool call early. _spec_tool_task
+        # holds that early-launched tool coroutine so the processing-tools state can
+        # reuse it instead of issuing a fresh (full-latency) tool call.
+        self._spec_hit: Optional[bool] = None
+        self._spec_tool_task: Optional[asyncio.Task] = None
 
         self.routed_experts = None
 
@@ -126,6 +145,21 @@ class ToolAgentLoop(AgentLoopBase):
     _active_count: int = 0
     _active_peak: int = 0
     _shadow_fired: int = 0
+    # Long-tail checkpoint state (process-local). _tail_fracs are the active-count
+    # thresholds (as a fraction of _active_peak). _tail_marked_at[frac] is the
+    # perf_counter when the tail first dropped to that level; _tail_tool_after[frac]
+    # counts tool calls fired at/after that mark.
+    _tail_fracs = (0.25, 0.15, 0.10, 0.05)
+    _tail_marked_at: dict[float, float] = {}
+    _tail_tool_after: dict[float, int] = {}
+    _tail_total_tool: int = 0
+    _tail_last_update: float = 0.0
+    _tail_last_write: float = 0.0
+    # Process-level RNG for the simulated speculation hit decision. Must be
+    # class-level: a fresh ToolAgentLoop is instantiated per trajectory, so a
+    # per-instance seeded RNG would reset every time and make the hit decision
+    # deterministic (always the seed's first draw).
+    _spec_rng: Optional[random.Random] = None
 
     def __init__(self, *args, tools: Optional[ToolListWrap] = None, **kwargs):
         """Initialize the tool agent loop.
@@ -192,6 +226,26 @@ class ToolAgentLoop(AgentLoopBase):
         # to/below a threshold, which means SGLang load + KV are low and there is
         # spare decode bandwidth to soak up. This targets only the stragglers.
         self.shadow_tail = os.getenv("HOTPOT_SHADOW_TAIL", "").strip().lower() in {"1", "true", "yes"}
+        # Compressed shadow prompt: feed the non-thinking shadow a context that has
+        # the prior <think> traces stripped (only assistant tool_calls + tool
+        # responses). Tests whether the main model's thinking interferes with the
+        # non-thinking shadow and makes it ramble in later turns.
+        self.shadow_compress = os.getenv("HOTPOT_SHADOW_COMPRESS", "").strip().lower() in {"1", "true", "yes"}
+        # Direct-token shadow prompt: instead of re-running apply_chat_template (which
+        # left-truncates to rollout.prompt_length and drops the system prompt/question
+        # in later turns), feed the shadow the SAME accumulated token_ids as the main
+        # thinking request, then append the empty-think prefix "<think>\n\n</think>\n\n"
+        # to switch the model into non-thinking mode. No re-template, no truncation.
+        self.shadow_direct_tokens = os.getenv("HOTPOT_SHADOW_DIRECT_TOKENS", "").strip().lower() in {"1", "true", "yes"}
+        self._empty_think_suffix_ids: Optional[list[int]] = None
+        self._think_open_id: Optional[int] = None
+        self._think_close_id: Optional[int] = None
+        self._think_ids_ready = False
+        # Long-tail checkpoint stats: when the number of still-active trajectories in
+        # this worker drops to <=25/15/10/5% of the per-worker peak, stamp a time and
+        # then count how many tool calls fire AFTER that point (i.e. within the tail
+        # window only). Written per-pid to HOTPOT_TAIL_CKPT.<pid>.json.
+        self.tail_ckpt_path = os.getenv("HOTPOT_TAIL_CKPT", "").strip()
         self.shadow_tail_min_turn = int(os.getenv("HOTPOT_SHADOW_TAIL_MIN_TURN", "3") or "3")
         # Absolute active-trajectory ceiling for "in tail"; if unset/0, fall back to
         # a fraction of the per-worker peak active count.
@@ -204,6 +258,47 @@ class ToolAgentLoop(AgentLoopBase):
                 self._shadow_fh = open(f"{self.shadow_jsonl}.{os.getpid()}.jsonl", "a", buffering=1)
             except Exception:
                 self._shadow_fh = None
+        # Optional trace dump: write the FULL prompt (decoded text) fed to the LLM at
+        # selected turns, so one can inspect the accumulated multi-turn context. Gated
+        # by HOTPOT_TRACE_DUMP (file prefix); turns via HOTPOT_TRACE_DUMP_TURNS
+        # ("3,4"), capped by HOTPOT_TRACE_DUMP_MAX per worker (default 30).
+        self.trace_dump_path = os.getenv("HOTPOT_TRACE_DUMP", "").strip()
+        # Turns to dump. Special value "all" (or "0") => dump EVERY turn from turn 1.
+        _turns_env = os.getenv("HOTPOT_TRACE_DUMP_TURNS", "4").strip().lower()
+        if _turns_env in ("all", "0", "*"):
+            self.trace_dump_turns = None  # None => all turns
+        else:
+            self.trace_dump_turns = {
+                int(x) for x in _turns_env.split(",") if x.strip()
+            }
+        self.trace_dump_max = int(os.getenv("HOTPOT_TRACE_DUMP_MAX", "30") or "30")
+        self._trace_fh = None
+        self._trace_dumped = 0
+        if self.trace_dump_path:
+            try:
+                self._trace_fh = open(f"{self.trace_dump_path}.{os.getpid()}.jsonl", "a", buffering=1)
+            except Exception:
+                self._trace_fh = None
+        # Simulated speculation hit rate: fraction of tail-shadow SAMPLES that, on
+        # receiving the non-thinking shadow response, immediately fire the tool call
+        # (overlapping tool latency with the main thinking decode) and then skip the
+        # real tool call when the main response arrives. The rest discard the shadow.
+        self.spec_hit_rate = float(os.getenv("HOTPOT_SPEC_HIT_RATE", "0") or "0")
+        # Optional per-turn hit rates, e.g. "0.30,0.30,0.18,0.15" -> turn1..turn4
+        # (turns beyond the list reuse the last value). When set, the hit/miss is
+        # rolled PER TURN (every turn a shadow fires) using that turn's rate,
+        # instead of once per sample. Used for full-shadow where early thinking
+        # turns are more speculatable than later ones.
+        _by_turn = os.getenv("HOTPOT_SPEC_HIT_RATE_BY_TURN", "").strip()
+        self.spec_hit_by_turn = [float(x) for x in _by_turn.split(",") if x.strip()] if _by_turn else []
+        # When true (default) the shadow is fire-and-forget: the main path is never
+        # blocked on the shadow and the shadow is cancelled once the main returns.
+        # Set false to reproduce the old behaviour where the turn awaits BOTH the
+        # main and shadow (asyncio.gather), which puts the shadow on the critical path.
+        self.shadow_fire_and_forget = os.getenv("HOTPOT_SHADOW_FIRE_AND_FORGET", "true").strip().lower() in ("1", "true", "yes")
+        if ToolAgentLoop._spec_rng is None:
+            _spec_seed = os.getenv("HOTPOT_SPEC_HIT_SEED", "").strip()
+            ToolAgentLoop._spec_rng = random.Random(int(_spec_seed)) if _spec_seed else random.Random()
 
         tool_list = tools.tools if tools else []
         self.tools = {tool.name: tool for tool in tool_list}
@@ -278,6 +373,7 @@ class ToolAgentLoop(AgentLoopBase):
                     state = AgentState.TERMINATED
         finally:
             ToolAgentLoop._active_count -= 1
+            self._maybe_mark_tail_checkpoint()
             agent_data.set_worker_state("finished")
             for task in agent_data._speculative_background_tasks:
                 if not task.done():
@@ -344,6 +440,8 @@ class ToolAgentLoop(AgentLoopBase):
             apply_chat_template_kwargs=self._main_chat_template_kwargs(),
         )
         agent_data.prompt_ids = prompt_ids
+        if self.shadow_compress and self.shadow_direct_tokens:
+            agent_data.shadow_prompt_ids = list(prompt_ids)
         return AgentState.GENERATING
 
     def _main_chat_template_kwargs(self) -> dict[str, Any] | None:
@@ -378,6 +476,64 @@ class ToolAgentLoop(AgentLoopBase):
             ceiling = max(1, int(self.shadow_tail_active_frac * ToolAgentLoop._active_peak))
         return ToolAgentLoop._active_count <= ceiling
 
+    def _maybe_mark_tail_checkpoint(self) -> None:
+        """Called when a trajectory finishes (active_count just decremented). The
+        first time the active count drops to <= frac*peak, stamp the time so we can
+        later attribute tool calls to the tail window."""
+        if not self.tail_ckpt_path:
+            return
+        peak = ToolAgentLoop._active_peak
+        if peak <= 0:
+            return
+        marked = False
+        for frac in ToolAgentLoop._tail_fracs:
+            if frac in ToolAgentLoop._tail_marked_at:
+                continue
+            if ToolAgentLoop._active_count <= frac * peak:
+                ToolAgentLoop._tail_marked_at[frac] = time.perf_counter()
+                ToolAgentLoop._tail_tool_after.setdefault(frac, 0)
+                marked = True
+        # Write on a new mark, and force a final flush when this worker drains
+        # (last trajectory finished) so throttled tail counts are not lost.
+        if marked or ToolAgentLoop._active_count <= 0:
+            self._write_tail_ckpt()
+
+    def _count_tail_toolcalls(self, n: int) -> None:
+        """Count n tool calls against every tail checkpoint already crossed."""
+        if not self.tail_ckpt_path or n <= 0:
+            return
+        ToolAgentLoop._tail_total_tool += n
+        if ToolAgentLoop._tail_marked_at:
+            for frac in ToolAgentLoop._tail_marked_at:
+                ToolAgentLoop._tail_tool_after[frac] = ToolAgentLoop._tail_tool_after.get(frac, 0) + n
+            # Throttle: snapshot at most once per second so write frequency is
+            # independent of tool-call volume (keeps it off the latency path).
+            if time.perf_counter() - ToolAgentLoop._tail_last_write > 1.0:
+                self._write_tail_ckpt()
+
+    def _write_tail_ckpt(self) -> None:
+        ToolAgentLoop._tail_last_update = time.perf_counter()
+        ToolAgentLoop._tail_last_write = ToolAgentLoop._tail_last_update
+        try:
+            snap = {
+                "pid": os.getpid(),
+                "active_peak": ToolAgentLoop._active_peak,
+                "total_tool_calls": ToolAgentLoop._tail_total_tool,
+                "last_update": ToolAgentLoop._tail_last_update,
+                "checkpoints": {
+                    str(frac): {
+                        "marked_at": ToolAgentLoop._tail_marked_at[frac],
+                        "tool_calls_after": ToolAgentLoop._tail_tool_after.get(frac, 0),
+                        "window_s": ToolAgentLoop._tail_last_update - ToolAgentLoop._tail_marked_at[frac],
+                    }
+                    for frac in ToolAgentLoop._tail_marked_at
+                },
+            }
+            with open(f"{self.tail_ckpt_path}.{os.getpid()}.json", "w") as fh:
+                json.dump(snap, fh)
+        except Exception:
+            pass
+
     def _log_shadow_fire(self, agent_data: AgentData, turn_index: int) -> None:
         ToolAgentLoop._shadow_fired += 1
         if self._shadow_fh is None:
@@ -398,16 +554,161 @@ class ToolAgentLoop(AgentLoopBase):
         except Exception:
             pass
 
+    def _log_shadow_decode(
+        self,
+        agent_data: AgentData,
+        turn_index: int,
+        decode_s: float,
+        hit: bool,
+        main: bool = False,
+        tokens: Optional[int] = None,
+        queue_s: Optional[float] = None,
+    ) -> None:
+        if self._shadow_fh is None:
+            return
+        try:
+            self._shadow_fh.write(
+                json.dumps(
+                    {
+                        "event": "main_decode" if main else "shadow_decode",
+                        "request_id": agent_data.request_id,
+                        "turn": int(turn_index),
+                        "decode_s": float(decode_s),
+                        "tokens": int(tokens) if tokens is not None else None,
+                        "queue_s": float(queue_s) if queue_s is not None else None,
+                        "spec_hit_sample": bool(hit),
+                    }
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+
+    def _maybe_dump_trace(self, agent_data: AgentData, turn_index: int) -> None:
+        """Dump the full decoded prompt fed to the LLM at selected turns."""
+        if self._trace_fh is None or (self.trace_dump_turns is not None and turn_index not in self.trace_dump_turns):
+            return
+        if self._trace_dumped >= self.trace_dump_max:
+            return
+        try:
+            text = self.tokenizer.decode(agent_data.prompt_ids, skip_special_tokens=False)
+            self._trace_fh.write(
+                json.dumps(
+                    {
+                        "request_id": agent_data.request_id,
+                        "turn": turn_index,
+                        "prompt_len": len(agent_data.prompt_ids),
+                        "prompt_text": text,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            self._trace_dumped += 1
+        except Exception:
+            pass
+
+    def _maybe_dump_shadow_text(self, agent_data: AgentData, turn_index: int, out: "TokenOutput") -> None:
+        """Dump the decoded non-thinking shadow OUTPUT text at selected turns."""
+        if self._trace_fh is None or (self.trace_dump_turns is not None and turn_index not in self.trace_dump_turns):
+            return
+        if self._trace_dumped >= self.trace_dump_max:
+            return
+        try:
+            text = self.tokenizer.decode(out.token_ids, skip_special_tokens=False)
+            self._trace_fh.write(
+                json.dumps(
+                    {
+                        "kind": "shadow_output",
+                        "request_id": agent_data.request_id,
+                        "turn": turn_index,
+                        "tokens": len(out.token_ids),
+                        "shadow_text": text,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            self._trace_dumped += 1
+        except Exception:
+            pass
+
+    def _maybe_dump_main_text(self, agent_data: AgentData, turn_index: int, out: "TokenOutput") -> None:
+        """Dump the decoded main (thinking) OUTPUT text at selected turns, keyed by
+        the same request_id+turn as the shadow dump so the two can be paired."""
+        if self._trace_fh is None or (self.trace_dump_turns is not None and turn_index not in self.trace_dump_turns):
+            return
+        if self._trace_dumped >= self.trace_dump_max:
+            return
+        try:
+            text = self.tokenizer.decode(out.token_ids, skip_special_tokens=False)
+            self._trace_fh.write(
+                json.dumps(
+                    {
+                        "kind": "main_output",
+                        "request_id": agent_data.request_id,
+                        "turn": turn_index,
+                        "tokens": len(out.token_ids),
+                        "main_text": text,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            self._trace_dumped += 1
+        except Exception:
+            pass
+
+    def _maybe_dump_shadow_prompt(self, agent_data: AgentData, turn_index: int, shadow_prompt_ids: list[int]) -> None:
+        """Dump the full decoded prompt fed to the NON-THINKING shadow at selected
+        turns. With shadow compression on, this differs from the main prompt, so we
+        record it separately (kind=shadow_prompt)."""
+        if self._trace_fh is None or (self.trace_dump_turns is not None and turn_index not in self.trace_dump_turns):
+            return
+        if self._trace_dumped >= self.trace_dump_max:
+            return
+        try:
+            text = self.tokenizer.decode(shadow_prompt_ids, skip_special_tokens=False)
+            self._trace_fh.write(
+                json.dumps(
+                    {
+                        "kind": "shadow_prompt",
+                        "request_id": agent_data.request_id,
+                        "turn": turn_index,
+                        "prompt_len": len(shadow_prompt_ids),
+                        "shadow_prompt_text": text,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            self._trace_dumped += 1
+        except Exception:
+            pass
+
     async def _generate_with_shadow(self, agent_data: AgentData, sampling_params: dict[str, Any]) -> "TokenOutput":
         """Fire the main (thinking) generation plus one parallel enable_thinking=False
-        shadow request for the same turn, wait for both, and return ONLY the main
-        output. The shadow result is discarded -- this is intentionally dumb: no
-        tool-call matching, prefetch, or reuse. It exists solely to add concurrent
-        load (one extra request per assistant turn per sample) so we can observe how
-        rollout throughput and SGLang scheduling react.
+        shadow request, but FIRE-AND-FORGET the shadow: return as soon as the main
+        finishes and cancel the shadow if it is still running. This keeps the shadow
+        off the critical path so it cannot extend the makespan of tail stragglers.
+
+        On a simulated-hit sample, if the (faster) shadow happens to finish before the
+        main, it parses its tool call and launches the tool early so its latency can
+        overlap the remaining main decode (processing-tools then reuses it).
         """
         turn_index = agent_data.assistant_turns + 1
         self._log_shadow_fire(agent_data, turn_index)
+        # Decide hit/miss. With per-turn rates (HOTPOT_SPEC_HIT_RATE_BY_TURN) the
+        # roll happens EVERY turn a shadow fires, using that turn's rate. Otherwise
+        # fall back to a single uniform rate (HOTPOT_SPEC_HIT_RATE), decided once
+        # per sample so a sample consistently hits/misses.
+        if self.spec_hit_by_turn:
+            rate = self.spec_hit_by_turn[min(turn_index, len(self.spec_hit_by_turn)) - 1]
+            agent_data._spec_hit = ToolAgentLoop._spec_rng.random() < rate
+        elif agent_data._spec_hit is None and self.spec_hit_rate > 0:
+            agent_data._spec_hit = ToolAgentLoop._spec_rng.random() < self.spec_hit_rate
+
+        t_fire = time.perf_counter()
         main_task = asyncio.create_task(
             self.server_manager.generate(
                 request_id=agent_data.request_id,
@@ -420,8 +721,10 @@ class ToolAgentLoop(AgentLoopBase):
             )
         )
         shadow_prompt_ids = await self._build_non_thinking_prompt_ids(agent_data)
-        shadow_task = asyncio.create_task(
-            self.server_manager.generate(
+        self._maybe_dump_shadow_prompt(agent_data, turn_index, shadow_prompt_ids)
+
+        async def _run_shadow() -> None:
+            out = await self.server_manager.generate(
                 request_id=f"{agent_data.request_id}-shadow-{turn_index}",
                 prompt_ids=shadow_prompt_ids,
                 sampling_params=self._non_thinking_sampling_params(sampling_params),
@@ -430,14 +733,125 @@ class ToolAgentLoop(AgentLoopBase):
                 audio_data=agent_data.audio_data,
                 mm_processor_kwargs=agent_data.mm_processor_kwargs,
             )
+            self._log_shadow_decode(
+                agent_data,
+                turn_index,
+                time.perf_counter() - t_fire,
+                hit=bool(agent_data._spec_hit),
+                tokens=len(out.token_ids),
+                queue_s=(out.extra_fields or {}).get("sglang_queue_time_s"),
+            )
+            self._maybe_dump_shadow_text(agent_data, turn_index, out)
+            # Simulated hit: the shadow beat the main, so launch its tool now to
+            # overlap the tool latency with the remaining main decode.
+            if agent_data._spec_hit and agent_data._spec_tool_task is None:
+                calls = await self._parse_shadow_tool_calls(agent_data, out)
+                if calls:
+                    agent_data._spec_tool_task = asyncio.create_task(
+                        self._call_tool(calls[0], agent_data.tools_kwargs, agent_data)
+                    )
+                    agent_data._speculative_background_tasks.append(agent_data._spec_tool_task)
+
+        shadow_task = asyncio.create_task(_run_shadow())
+        agent_data._speculative_background_tasks.append(shadow_task)
+
+        output = await main_task
+        main_decode_s = time.perf_counter() - t_fire
+        if self.shadow_fire_and_forget:
+            # Fire-and-forget: do NOT wait for the shadow. Cancel it if it has not
+            # finished by the time the main returns so it never extends the turn.
+            if not shadow_task.done():
+                shadow_task.cancel()
+        else:
+            # Legacy behaviour: block the turn until the shadow also finishes,
+            # putting the (often slower) shadow on the critical path.
+            try:
+                await shadow_task
+            except asyncio.CancelledError:
+                pass
+        self._log_shadow_decode(
+            agent_data,
+            turn_index,
+            main_decode_s,
+            hit=bool(agent_data._spec_hit),
+            main=True,
+            tokens=len(output.token_ids),
+            queue_s=(output.extra_fields or {}).get("sglang_queue_time_s"),
         )
-        output, _shadow_output = await asyncio.gather(main_task, shadow_task)
+        self._maybe_dump_main_text(agent_data, turn_index, output)
         return output
 
+    async def _parse_shadow_tool_calls(self, agent_data: AgentData, shadow_out: "TokenOutput") -> list[FunctionCall]:
+        active_tools = getattr(agent_data, "_active_tools", self.tools)
+        tools = [tool.tool_schema for tool in active_tools.values()]
+        try:
+            _, calls = await self.tool_parser.extract_tool_calls(shadow_out.token_ids, tools)
+        except Exception:
+            calls = []
+        return calls
+
+    _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+    async def _append_compressed_assistant_turn(self, agent_data: AgentData) -> None:
+        """Append the just-completed assistant turn to nonthinking_msgs with its
+        <think>...</think> block stripped, so the compressed shadow context keeps
+        only the assistant's tool_call (no reasoning)."""
+        if not self.shadow_compress or self.shadow_direct_tokens:
+            return
+        text = await self._decode_current_response(agent_data.response_ids)
+        text = self._THINK_RE.sub("", text).strip()
+        agent_data.nonthinking_msgs.append({"role": "assistant", "content": text})
+
+    def _ensure_think_ids(self) -> None:
+        """Lazily resolve the <think>/</think> token ids and the empty-think prefix
+        token ids used to switch the model into non-thinking mode."""
+        if self._think_ids_ready:
+            return
+        self._think_ids_ready = True
+        try:
+            self._empty_think_suffix_ids = self.tokenizer.encode(
+                "<think>\n\n</think>\n\n", add_special_tokens=False
+            )
+        except Exception:
+            self._empty_think_suffix_ids = []
+        for tok, attr in (("<think>", "_think_open_id"), ("</think>", "_think_close_id")):
+            try:
+                ids = self.tokenizer.encode(tok, add_special_tokens=False)
+                setattr(self, attr, ids[0] if len(ids) == 1 else None)
+            except Exception:
+                setattr(self, attr, None)
+
+    def _strip_think_tokens(self, ids: list[int]) -> list[int]:
+        """Remove the FIRST <think>...</think> span (inclusive) from a token list.
+        Used on each assistant turn's generated tokens, where any <think>/</think>
+        come from the model's own reasoning (never the system prompt)."""
+        self._ensure_think_ids()
+        o, c = self._think_open_id, self._think_close_id
+        if o is None or c is None:
+            return list(ids)
+        try:
+            i = ids.index(o)
+            j = ids.index(c, i)
+        except ValueError:
+            return list(ids)
+        return ids[:i] + ids[j + 1 :]
+
+    def _direct_shadow_prompt_ids(self, agent_data: AgentData) -> list[int]:
+        """Build the shadow prompt by reusing the main's accumulated token_ids
+        (no re-template, no truncation) and appending the empty-think prefix so the
+        model generates in non-thinking mode. In compress mode the base is the
+        think-stripped history (agent_data.shadow_prompt_ids)."""
+        self._ensure_think_ids()
+        base = agent_data.shadow_prompt_ids if self.shadow_compress else agent_data.prompt_ids
+        return list(base) + list(self._empty_think_suffix_ids or [])
+
     async def _build_non_thinking_prompt_ids(self, agent_data: AgentData) -> list[int]:
+        if self.shadow_direct_tokens:
+            return self._direct_shadow_prompt_ids(agent_data)
         schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
+        msgs = agent_data.nonthinking_msgs if self.shadow_compress else agent_data.messages
         return await self.apply_chat_template(
-            agent_data.messages,
+            msgs,
             tools=schemas,
             images=agent_data.image_data,
             videos=agent_data.video_data,
@@ -632,6 +1046,7 @@ class ToolAgentLoop(AgentLoopBase):
         with simple_timer("generate_sequences", agent_data.metrics):
             agent_data.set_worker_state("llm_inflight")
             turn_index = agent_data.assistant_turns + 1
+            self._maybe_dump_trace(agent_data, turn_index)
             if self.speculative_prefetch:
                 output, parsed_tool_calls, _spec_record = await self._generate_main_and_speculative(
                     agent_data, sampling_params
@@ -676,6 +1091,10 @@ class ToolAgentLoop(AgentLoopBase):
         agent_data.assistant_turns += 1
         agent_data.response_ids = output.token_ids
         agent_data.prompt_ids += agent_data.response_ids
+        if self.shadow_compress and self.shadow_direct_tokens:
+            # Append this assistant turn to the compressed shadow history with its
+            # <think>...</think> reasoning span stripped at the token level.
+            agent_data.shadow_prompt_ids += self._strip_think_tokens(agent_data.response_ids)
         agent_data.response_mask += [1] * len(agent_data.response_ids)
         if output.log_probs:
             agent_data.response_logprobs += output.log_probs
@@ -720,21 +1139,34 @@ class ToolAgentLoop(AgentLoopBase):
 
     async def _handle_processing_tools_state(self, agent_data: AgentData) -> AgentState:
         """Handle the processing tools state: execute tool calls and prepare tool responses."""
+        # Record the assistant tool_call (without thinking) into the compressed
+        # shadow history before appending this turn's tool responses below.
+        await self._append_compressed_assistant_turn(agent_data)
         add_messages: list[dict[str, Any]] = []
         new_images_this_turn: list[Any] = []  # Local variable instead of agent_data attribute
 
         tasks = []
         responses: list[tuple[ToolResponse, float, dict]] = []
         tool_call_names = []
-        for tool_call in agent_data.tool_calls[: self.max_parallel_calls]:
+        # Simulated speculation hit: a tool task was already launched the moment the
+        # non-thinking shadow returned, so its latency overlapped with the main
+        # decode. Reuse it for the first tool call (await whatever time remains)
+        # instead of issuing a fresh full-latency call.
+        spec_tool_task = agent_data._spec_tool_task
+        agent_data._spec_tool_task = None
+        for idx, tool_call in enumerate(agent_data.tool_calls[: self.max_parallel_calls]):
             key = self._tool_call_key(tool_call)
-            if key in agent_data.prefetched_tool_responses:
+            if idx == 0 and spec_tool_task is not None:
+                tasks.append(spec_tool_task)
+            elif key in agent_data.prefetched_tool_responses:
                 responses.append(agent_data.prefetched_tool_responses.pop(key))
             else:
                 tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
             tool_call_names.append(tool_call.name)
-        agent_data.tool_call_count += len(agent_data.tool_calls[: self.max_parallel_calls])
+        _n_tool_this_turn = len(agent_data.tool_calls[: self.max_parallel_calls])
+        agent_data.tool_call_count += _n_tool_this_turn
         agent_data.metrics["tool_call_count"] = agent_data.tool_call_count
+        self._count_tail_toolcalls(_n_tool_this_turn)
 
         _tool_start = time.perf_counter()
         agent_data.set_worker_state("waiting_tool")
@@ -798,6 +1230,8 @@ class ToolAgentLoop(AgentLoopBase):
                 agent_data.tool_rewards.append(tool_reward)
 
         agent_data.messages.extend(add_messages)
+        if self.shadow_compress:
+            agent_data.nonthinking_msgs.extend(dict(m) for m in add_messages)
 
         if self.tool_parser_name == "gpt-oss":
             logger.info("manually format tool responses for gpt-oss")
@@ -846,6 +1280,8 @@ class ToolAgentLoop(AgentLoopBase):
                 agent_data.image_data.append(img)
 
         agent_data.prompt_ids += response_ids
+        if self.shadow_compress and self.shadow_direct_tokens:
+            agent_data.shadow_prompt_ids += response_ids
         agent_data.response_mask += [0] * len(response_ids)
         if agent_data.response_logprobs:
             agent_data.response_logprobs += [0.0] * len(response_ids)

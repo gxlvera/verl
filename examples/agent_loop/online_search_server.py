@@ -99,6 +99,53 @@ def _fetch_json(url: str, headers: dict[str, str], timeout: float) -> dict[str, 
     return data
 
 
+class LocalBM25Client:
+    """Local BM25 retriever over the Search-R1 wiki-18 corpus via bm25s (pure Python).
+
+    Loads a prebuilt bm25s index (memory-mapped) and serves the same .search()
+    interface as the online providers, returning real Wikipedia passages.
+    """
+
+    def __init__(self, index_dir: str, topk: int):
+        import bm25s  # noqa: PLC0415
+        import Stemmer  # noqa: PLC0415
+
+        self.provider = "localbm25"
+        self.topk = topk
+        self._bm25s = bm25s
+        self._stemmer = Stemmer.Stemmer("english")
+        # load_corpus=True returns the stored doc dicts directly from retrieve()
+        self.retriever = bm25s.BM25.load(index_dir, mmap=True, load_corpus=True)
+
+    def search(self, query: str, topk: int) -> list[SearchResult]:
+        query = query.strip()
+        if not query:
+            return []
+        q_tokens = self._bm25s.tokenize(
+            query, stopwords="en", stemmer=self._stemmer, show_progress=False
+        )
+        docs, scores = self.retriever.retrieve(q_tokens, k=topk, show_progress=False)
+        results: list[SearchResult] = []
+        for rank in range(docs.shape[1]):
+            doc = docs[0, rank]
+            score = float(scores[0, rank])
+            if isinstance(doc, dict):
+                title = str(doc.get("title") or "")
+                contents = str(doc.get("contents") or doc.get("text") or "")
+            else:
+                title, contents = "", str(doc)
+            results.append(
+                SearchResult(
+                    title=title,
+                    snippet=contents,
+                    url="",
+                    source="wiki18_bm25",
+                    score=round(score, 4),
+                )
+            )
+        return results
+
+
 class OnlineSearchClient:
     def __init__(
         self,
@@ -290,6 +337,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--google-cse-id", default=_env("GOOGLE_CSE_ID", ""))
     parser.add_argument("--brave-api-key", default=_env("BRAVE_SEARCH_API_KEY", ""))
     parser.add_argument("--bing-api-key", default=_env("BING_SEARCH_API_KEY", ""))
+    parser.add_argument(
+        "--bm25-index-dir",
+        default=_env("LOCAL_BM25_INDEX_DIR", "/home/tiger/data/search_r1_wiki18/bm25s_index"),
+    )
     return parser.parse_args()
 
 
@@ -297,17 +348,20 @@ def main() -> None:
     import uvicorn
 
     args = parse_args()
-    client = OnlineSearchClient(
-        provider=args.provider,
-        topk=args.topk,
-        timeout=args.timeout,
-        search_url=args.search_url,
-        serp_api_key=args.serp_api_key,
-        google_api_key=args.google_api_key,
-        google_cse_id=args.google_cse_id,
-        brave_api_key=args.brave_api_key,
-        bing_api_key=args.bing_api_key,
-    )
+    if args.provider.lower() in ("localbm25", "local_bm25", "bm25", "wiki18"):
+        client = LocalBM25Client(index_dir=args.bm25_index_dir, topk=args.topk)
+    else:
+        client = OnlineSearchClient(
+            provider=args.provider,
+            topk=args.topk,
+            timeout=args.timeout,
+            search_url=args.search_url,
+            serp_api_key=args.serp_api_key,
+            google_api_key=args.google_api_key,
+            google_cse_id=args.google_cse_id,
+            brave_api_key=args.brave_api_key,
+            bing_api_key=args.bing_api_key,
+        )
     app = build_app(client, LruCache(args.cache_size))
     uvicorn.run(app, host=args.host, port=args.port)
 

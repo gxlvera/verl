@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 _SLEEP_RNG: random.Random | None = None
 _SLEEP_RNG_SEED: str | None = None
 
+# Empirical latency samples loaded from a CSV column (e.g. measured serpapi search
+# latencies). Cached after first load; each tool call bootstrap-samples one value.
+_LATENCY_CSV_VALUES: list[float] | None = None
+
 # Target size (in model tokens) of the synthetic evidence passage returned by the
 # tool on every call. Defaults to 500 tokens. The text is sized with the model
 # tokenizer so it re-encodes to ~this many tokens (see _fixed_context).
@@ -81,7 +85,41 @@ def _sleep_rng() -> random.Random:
     return _SLEEP_RNG
 
 
+def _load_latency_csv(path: str) -> list[float]:
+    """Load (and cache) a column of latency-in-seconds values from a CSV file.
+
+    Column defaults to 'search_elapsed_s' (the serpapi search latency column from
+    the 100-call profiling run); override via HOTPOT_TOOL_LATENCY_CSV_COLUMN.
+    """
+    global _LATENCY_CSV_VALUES
+    if _LATENCY_CSV_VALUES is not None:
+        return _LATENCY_CSV_VALUES
+    import csv as _csv
+
+    col = os.getenv("HOTPOT_TOOL_LATENCY_CSV_COLUMN", "search_elapsed_s").strip()
+    values: list[float] = []
+    with open(path, newline="") as f:
+        for row in _csv.DictReader(f):
+            raw = (row.get(col) or "").strip()
+            if not raw:
+                continue
+            try:
+                values.append(float(raw))
+            except ValueError:
+                continue
+    if not values:
+        raise ValueError(f"HOTPOT_TOOL_LATENCY_CSV {path!r} has no values in column {col!r}.")
+    _LATENCY_CSV_VALUES = values
+    logger.info("Loaded %d latency samples from %s column %s.", len(values), path, col)
+    return values
+
+
 def _sample_sleep_ms() -> float:
+    csv_path = os.getenv("HOTPOT_TOOL_LATENCY_CSV", "").strip()
+    if csv_path:
+        values = _load_latency_csv(csv_path)
+        return _sleep_rng().choice(values) * 1000.0
+
     seconds_list = os.getenv("HOTPOT_TOOL_LATENCY_SECONDS_LIST", "").strip()
     if seconds_list:
         values = [float(item.strip()) for item in seconds_list.split(",") if item.strip()]

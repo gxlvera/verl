@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import time
 import urllib.error
 import urllib.request
@@ -15,6 +16,52 @@ from verl.tools.function_tool import function_tool
 
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
+
+
+# --- Simulated online-search (SerpAPI) latency on top of the real BM25 retrieve. --
+# BM25 supplies real content (~ms), but to mimic a remote search API we additionally
+# sleep a sampled delay. Same env contract as hotpot_fixed_context_tool.py so the
+# existing search_latencies.csv (mean ~2.7s) can be reused via HOTPOT_TOOL_LATENCY_CSV.
+_LATENCY_CSV_VALUES: list[float] | None = None
+_SLEEP_RNG: random.Random | None = None
+_SLEEP_RNG_SEED: str | None = None
+
+
+def _sleep_rng() -> random.Random:
+    global _SLEEP_RNG, _SLEEP_RNG_SEED
+    seed = _env("HOTPOT_TOOL_SLEEP_SEED")
+    if _SLEEP_RNG is None or seed != _SLEEP_RNG_SEED:
+        _SLEEP_RNG_SEED = seed
+        _SLEEP_RNG = random.Random(int(seed)) if seed else random.Random()
+    return _SLEEP_RNG
+
+
+def _load_latency_csv(path: str) -> list[float]:
+    global _LATENCY_CSV_VALUES
+    if _LATENCY_CSV_VALUES is not None:
+        return _LATENCY_CSV_VALUES
+    import csv as _csv
+
+    col = _env("HOTPOT_TOOL_LATENCY_CSV_COLUMN") or "search_elapsed_s"
+    values: list[float] = []
+    with open(path) as f:
+        for row in _csv.DictReader(f):
+            try:
+                values.append(float(row[col]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    _LATENCY_CSV_VALUES = values
+    return values
+
+
+def _sample_sleep_ms() -> float:
+    csv_path = _env("HOTPOT_TOOL_LATENCY_CSV")
+    if csv_path:
+        values = _load_latency_csv(csv_path)
+        if values:
+            return _sleep_rng().choice(values) * 1000.0
+    fixed = _env("HOTPOT_TOOL_SLEEP_MS")
+    return float(fixed) if fixed else 0.0
 
 
 def _post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
@@ -131,12 +178,20 @@ async def retrieve_hotpot_context(query: str | None = None, answer: str | None =
         text = f"<information>\nSearch error for query '{search_query}': {exc}\n</information>"
         return text, 0.0, {"search_error": type(exc).__name__, "latency_s": time.perf_counter() - started}
 
+    # Real BM25 content is now in hand; add the simulated SerpAPI latency to mimic a
+    # remote online-search API. On a speculative-hit turn this whole tool call is
+    # launched early (overlapping the thinking decode), so the sleep is hidden.
+    sim_sleep_ms = _sample_sleep_ms()
+    if sim_sleep_ms > 0:
+        await asyncio.sleep(sim_sleep_ms / 1000.0)
+
     return (
         _format_results(search_query, response, max_chars),
         0.0,
         {
             "search_error": "",
             "search_topk": topk,
+            "simulated_latency_s": sim_sleep_ms / 1000.0,
             "latency_s": time.perf_counter() - started,
         },
     )
