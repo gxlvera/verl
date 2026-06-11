@@ -1,0 +1,10 @@
+
+===== drafter=4B  target=8B =====
+turn  reach tgt_call drf_call   both   name= name+args=  query= match/tgt_call match/reach
+   1     50       33       50     33  100.0%      18.2%   18.2%         18.2%       12.0%
+>=3 full(name+args): match/both=  n/a (n=0)  match/tgt_call=  n/a  match/reach=  n/a
+
+===== drafter=4B  target=14B =====
+turn  reach tgt_call drf_call   both   name= name+args=  query= match/tgt_call match/reach
+   1     50       37       50     37  100.0%      13.5%   13.5%         13.5%       10.0%
+>=3 full(name+args): match/both=  n/a (n=0)  match/tgt_call=  n/a  match/reach=  n/a

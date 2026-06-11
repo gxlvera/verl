@@ -1,0 +1,15 @@
+{"request_id": "4dfb8e9ba0e14a9883efc72403966df9", "turn": 3, "active_at_fire": 59, "active_peak": 256, "prompt_len": 1756}
+{"request_id": "feb561e7b7464d84844c33a2ee5553a3", "turn": 4, "active_at_fire": 34, "active_peak": 256, "prompt_len": 2379}
+{"request_id": "4bf364820be04ef9b092c82521618218", "turn": 3, "active_at_fire": 33, "active_peak": 256, "prompt_len": 1837}
+{"request_id": "b3adc08b6e9b40548c8e2b6335e8fe92", "turn": 3, "active_at_fire": 30, "active_peak": 256, "prompt_len": 1855}
+{"event": "shadow_decode", "request_id": "4bf364820be04ef9b092c82521618218", "turn": 3, "decode_s": 5.264067329932004, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "4bf364820be04ef9b092c82521618218", "turn": 3, "decode_s": 5.264092632103711, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "b3adc08b6e9b40548c8e2b6335e8fe92", "turn": 3, "decode_s": 4.336052906699479, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "b3adc08b6e9b40548c8e2b6335e8fe92", "turn": 3, "decode_s": 4.991503109689802, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "4dfb8e9ba0e14a9883efc72403966df9", "turn": 3, "decode_s": 10.74491748586297, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "4dfb8e9ba0e14a9883efc72403966df9", "turn": 3, "decode_s": 10.744938548188657, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "feb561e7b7464d84844c33a2ee5553a3", "turn": 4, "decode_s": 4.680161244701594, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "feb561e7b7464d84844c33a2ee5553a3", "turn": 4, "decode_s": 9.22012707684189, "spec_hit_sample": false}
+{"request_id": "4bf364820be04ef9b092c82521618218", "turn": 4, "active_at_fire": 1, "active_peak": 256, "prompt_len": 2379}
+{"event": "shadow_decode", "request_id": "4bf364820be04ef9b092c82521618218", "turn": 4, "decode_s": 5.989806372206658, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "4bf364820be04ef9b092c82521618218", "turn": 4, "decode_s": 6.133066949434578, "spec_hit_sample": false}

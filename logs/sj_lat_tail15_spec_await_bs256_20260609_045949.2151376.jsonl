@@ -1,0 +1,7 @@
+{"request_id": "6172d1e654ab493ab66b9aacaf295978", "turn": 4, "active_at_fire": 35, "active_peak": 256, "prompt_len": 2256}
+{"request_id": "76c39b91846d4a64842129cbba049937", "turn": 4, "active_at_fire": 35, "active_peak": 256, "prompt_len": 2651}
+{"request_id": "bf552df7f6374787b103deb0553431e1", "turn": 4, "active_at_fire": 34, "active_peak": 256, "prompt_len": 2450}
+{"event": "shadow_decode", "request_id": "6172d1e654ab493ab66b9aacaf295978", "turn": 4, "decode_s": 0.8390502510592341, "tokens": 12, "queue_s": 0.00013160426169633865, "spec_hit_sample": false}
+{"request_id": "a0058b2d437d4e16aee249314f2ed4b6", "turn": 5, "active_at_fire": 32, "active_peak": 256, "prompt_len": 3188}
+{"request_id": "155d0859f756487d8f2b08cfa32b2b8b", "turn": 5, "active_at_fire": 31, "active_peak": 256, "prompt_len": 2943}
+{"request_id": "eae60f6fb0bf4c088a4ace5cc3d5029b", "turn": 5, "active_at_fire": 30, "active_peak": 256, "prompt_len": 2965}

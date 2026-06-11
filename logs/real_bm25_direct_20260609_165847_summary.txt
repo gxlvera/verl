@@ -1,0 +1,2 @@
+dir_direct_nocompress_bs256_20260609_165847 -> perf/throughput:4448.186007952936  trace=/home/tiger/verl/logs/trace_dir_direct_nocompress_bs256_20260609_165847  tailckpt=/home/tiger/verl/logs/tailckpt_dir_direct_nocompress_bs256_20260609_165847
+dir_direct_compress_bs256_20260609_165847 -> perf/throughput:4299.912911429209  trace=/home/tiger/verl/logs/trace_dir_direct_compress_bs256_20260609_165847  tailckpt=/home/tiger/verl/logs/tailckpt_dir_direct_compress_bs256_20260609_165847

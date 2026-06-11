@@ -1,0 +1,12 @@
+{"request_id": "75dcf980f5644d12be6e2d96a1bd3cd7", "turn": 4, "active_at_fire": 11, "active_peak": 256, "prompt_len": 2346}
+{"request_id": "bf56284ed9ca46c88ee739cab3f9dd14", "turn": 5, "active_at_fire": 6, "active_peak": 256, "prompt_len": 2919}
+{"event": "shadow_decode", "request_id": "75dcf980f5644d12be6e2d96a1bd3cd7", "turn": 4, "decode_s": 3.2424274468794465, "tokens": 225, "queue_s": 0.0001908917911350727, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "75dcf980f5644d12be6e2d96a1bd3cd7", "turn": 4, "decode_s": 0.7758899522013962, "tokens": 34, "queue_s": 0.0005141380243003368, "spec_hit_sample": false}
+{"request_id": "75dcf980f5644d12be6e2d96a1bd3cd7", "turn": 5, "active_at_fire": 4, "active_peak": 256, "prompt_len": 2869}
+{"request_id": "ef7149ce5d25414db7f902d450483bc5", "turn": 5, "active_at_fire": 3, "active_peak": 256, "prompt_len": 2915}
+{"event": "shadow_decode", "request_id": "bf56284ed9ca46c88ee739cab3f9dd14", "turn": 5, "decode_s": 6.723492638207972, "tokens": 500, "queue_s": 0.00013202987611293793, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "bf56284ed9ca46c88ee739cab3f9dd14", "turn": 5, "decode_s": 0.5549768880009651, "tokens": 34, "queue_s": 0.0004962501116096973, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "75dcf980f5644d12be6e2d96a1bd3cd7", "turn": 5, "decode_s": 6.464222918730229, "tokens": 500, "queue_s": 0.00012098485603928566, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "75dcf980f5644d12be6e2d96a1bd3cd7", "turn": 5, "decode_s": 0.26331534469500184, "tokens": 16, "queue_s": 0.0005060560069978237, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "ef7149ce5d25414db7f902d450483bc5", "turn": 5, "decode_s": 3.5114554199390113, "tokens": 279, "queue_s": 0.00014319922775030136, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "ef7149ce5d25414db7f902d450483bc5", "turn": 5, "decode_s": 0.2541865548118949, "tokens": 15, "queue_s": 0.0005436460487544537, "spec_hit_sample": false}

@@ -1,0 +1,12 @@
+{"request_id": "66ebd05d9b9e40b083c3128e1849f342", "turn": 3, "active_at_fire": 11, "active_peak": 256, "prompt_len": 2374}
+{"request_id": "f5132d7d2e1f4fbfb4bb67f9edf6410d", "turn": 5, "active_at_fire": 8, "active_peak": 256, "prompt_len": 2869}
+{"request_id": "57606dbb8e9e4487b02b0cf2df8c98ef", "turn": 5, "active_at_fire": 5, "active_peak": 256, "prompt_len": 2869}
+{"request_id": "1a49ce93d1cb4292b0eb035f2b37c515", "turn": 5, "active_at_fire": 4, "active_peak": 256, "prompt_len": 2908}
+{"event": "shadow_decode", "request_id": "66ebd05d9b9e40b083c3128e1849f342", "turn": 3, "decode_s": 6.890600208658725, "tokens": 500, "queue_s": 0.00018732761964201927, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "66ebd05d9b9e40b083c3128e1849f342", "turn": 3, "decode_s": 0.24218936264514923, "tokens": 14, "queue_s": 0.0004944391548633575, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "f5132d7d2e1f4fbfb4bb67f9edf6410d", "turn": 5, "decode_s": 6.789272476918995, "tokens": 500, "queue_s": 0.00014939624816179276, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "f5132d7d2e1f4fbfb4bb67f9edf6410d", "turn": 5, "decode_s": 0.4844239582307637, "tokens": 16, "queue_s": 0.0008731558918952942, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "1a49ce93d1cb4292b0eb035f2b37c515", "turn": 5, "decode_s": 3.7338392194360495, "tokens": 276, "queue_s": 0.0001818956807255745, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "1a49ce93d1cb4292b0eb035f2b37c515", "turn": 5, "decode_s": 0.3631378053687513, "tokens": 15, "queue_s": 0.0004740217700600624, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "57606dbb8e9e4487b02b0cf2df8c98ef", "turn": 5, "decode_s": 6.753754428122193, "tokens": 499, "queue_s": 0.00018802890554070473, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "57606dbb8e9e4487b02b0cf2df8c98ef", "turn": 5, "decode_s": 0.3296182048507035, "tokens": 16, "queue_s": 0.0004407055675983429, "spec_hit_sample": false}

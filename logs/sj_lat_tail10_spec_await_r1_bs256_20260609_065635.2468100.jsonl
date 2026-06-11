@@ -1,0 +1,24 @@
+{"request_id": "e78c9e817bd942f19720e91d94d501f4", "turn": 4, "active_at_fire": 25, "active_peak": 256, "prompt_len": 2477}
+{"request_id": "100c2252c0d14c38a89e58f0fcb5ae7e", "turn": 5, "active_at_fire": 16, "active_peak": 256, "prompt_len": 2869}
+{"request_id": "708aed0f71604529ab2e081a9467c49a", "turn": 5, "active_at_fire": 11, "active_peak": 256, "prompt_len": 2871}
+{"request_id": "3d6ce45c87674609b2b387b424293dc6", "turn": 5, "active_at_fire": 11, "active_peak": 256, "prompt_len": 2907}
+{"request_id": "a6ad14f0343a43f0aa0df22bbe3928aa", "turn": 5, "active_at_fire": 10, "active_peak": 256, "prompt_len": 2869}
+{"event": "shadow_decode", "request_id": "3d6ce45c87674609b2b387b424293dc6", "turn": 5, "decode_s": 3.994042256847024, "tokens": 281, "queue_s": 0.0002995440736413002, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "3d6ce45c87674609b2b387b424293dc6", "turn": 5, "decode_s": 0.3352053267881274, "tokens": 15, "queue_s": 0.0005303244106471539, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "e78c9e817bd942f19720e91d94d501f4", "turn": 4, "decode_s": 7.63674609689042, "tokens": 500, "queue_s": 0.00015350989997386932, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "e78c9e817bd942f19720e91d94d501f4", "turn": 4, "decode_s": 0.4039005748927593, "tokens": 15, "queue_s": 0.0004104766994714737, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "100c2252c0d14c38a89e58f0fcb5ae7e", "turn": 5, "decode_s": 7.351379898376763, "tokens": 500, "queue_s": 0.00013778498396277428, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "100c2252c0d14c38a89e58f0fcb5ae7e", "turn": 5, "decode_s": 0.3004565383307636, "tokens": 16, "queue_s": 0.0004226481541991234, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "708aed0f71604529ab2e081a9467c49a", "turn": 5, "decode_s": 7.051891199313104, "tokens": 500, "queue_s": 0.00014540133997797966, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "708aed0f71604529ab2e081a9467c49a", "turn": 5, "decode_s": 0.39436956495046616, "tokens": 16, "queue_s": 0.00042849592864513397, "spec_hit_sample": false}
+{"request_id": "b88fb99f90174ba999ffda6df9bc9014", "turn": 4, "active_at_fire": 3, "active_peak": 256, "prompt_len": 2450}
+{"event": "shadow_decode", "request_id": "a6ad14f0343a43f0aa0df22bbe3928aa", "turn": 5, "decode_s": 7.281625690869987, "tokens": 500, "queue_s": 0.00015037180855870247, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "a6ad14f0343a43f0aa0df22bbe3928aa", "turn": 5, "decode_s": 0.2834988432005048, "tokens": 16, "queue_s": 0.0004377160221338272, "spec_hit_sample": false}
+{"request_id": "0772140f01e84deaa3166b05e31f5772", "turn": 4, "active_at_fire": 2, "active_peak": 256, "prompt_len": 2346}
+{"event": "shadow_decode", "request_id": "b88fb99f90174ba999ffda6df9bc9014", "turn": 4, "decode_s": 3.77720352075994, "tokens": 303, "queue_s": 0.00014512287452816963, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "b88fb99f90174ba999ffda6df9bc9014", "turn": 4, "decode_s": 0.2490107617340982, "tokens": 14, "queue_s": 0.0004444611258804798, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "0772140f01e84deaa3166b05e31f5772", "turn": 4, "decode_s": 2.8350953310728073, "tokens": 225, "queue_s": 0.0001481841318309307, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "0772140f01e84deaa3166b05e31f5772", "turn": 4, "decode_s": 0.4740608111023903, "tokens": 34, "queue_s": 0.0004118261858820915, "spec_hit_sample": true}
+{"request_id": "0772140f01e84deaa3166b05e31f5772", "turn": 5, "active_at_fire": 1, "active_peak": 256, "prompt_len": 2869}
+{"event": "shadow_decode", "request_id": "0772140f01e84deaa3166b05e31f5772", "turn": 5, "decode_s": 5.831012747250497, "tokens": 491, "queue_s": 0.00027358392253518105, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "0772140f01e84deaa3166b05e31f5772", "turn": 5, "decode_s": 0.24695515586063266, "tokens": 16, "queue_s": 0.0005188668146729469, "spec_hit_sample": false}

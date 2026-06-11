@@ -1,0 +1,18 @@
+{"request_id": "203a7b8bfb6b4f2d84588911d4e158b5", "turn": 5, "active_at_fire": 9, "active_peak": 256, "prompt_len": 3527}
+{"request_id": "067ae8489e0f469db7a4b9d47d941c6c", "turn": 5, "active_at_fire": 8, "active_peak": 256, "prompt_len": 3385}
+{"request_id": "8f732e751b4a4f5e86ecc055fe24b9b1", "turn": 3, "active_at_fire": 8, "active_peak": 256, "prompt_len": 2020}
+{"event": "shadow_decode", "request_id": "8f732e751b4a4f5e86ecc055fe24b9b1", "turn": 3, "decode_s": 0.7478048750199378, "tokens": 42, "queue_s": 0.00017333822324872017, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "8f732e751b4a4f5e86ecc055fe24b9b1", "turn": 3, "decode_s": 0.7094992850907147, "tokens": 33, "queue_s": 0.00046874163672327995, "spec_hit_sample": false}
+{"request_id": "8f732e751b4a4f5e86ecc055fe24b9b1", "turn": 4, "active_at_fire": 5, "active_peak": 256, "prompt_len": 2578}
+{"request_id": "7bb2a695663148d5ae578ca31ad6bc99", "turn": 4, "active_at_fire": 5, "active_peak": 256, "prompt_len": 2984}
+{"event": "shadow_decode", "request_id": "203a7b8bfb6b4f2d84588911d4e158b5", "turn": 5, "decode_s": 7.944092026911676, "tokens": 474, "queue_s": 0.00019820686429738998, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "203a7b8bfb6b4f2d84588911d4e158b5", "turn": 5, "decode_s": 7.335652239155024, "tokens": 500, "queue_s": 0.000591732095927, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "067ae8489e0f469db7a4b9d47d941c6c", "turn": 5, "decode_s": 6.891697837039828, "tokens": 500, "queue_s": 0.0001649041660130024, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "067ae8489e0f469db7a4b9d47d941c6c", "turn": 5, "decode_s": 0.22900911001488566, "tokens": 13, "queue_s": 0.0005560554563999176, "spec_hit_sample": false}
+{"request_id": "2c013098767447b6b60af9883f379ae2", "turn": 5, "active_at_fire": 3, "active_peak": 256, "prompt_len": 2799}
+{"event": "shadow_decode", "request_id": "8f732e751b4a4f5e86ecc055fe24b9b1", "turn": 4, "decode_s": 6.528263199608773, "tokens": 475, "queue_s": 0.0001886896789073944, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "8f732e751b4a4f5e86ecc055fe24b9b1", "turn": 4, "decode_s": 0.3146723536774516, "tokens": 13, "queue_s": 0.0004834448918700218, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "7bb2a695663148d5ae578ca31ad6bc99", "turn": 4, "decode_s": 6.397289915941656, "tokens": 500, "queue_s": 0.0001414860598742962, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "7bb2a695663148d5ae578ca31ad6bc99", "turn": 4, "decode_s": 1.9700536746531725, "tokens": 143, "queue_s": 0.0005638310685753822, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "2c013098767447b6b60af9883f379ae2", "turn": 5, "decode_s": 4.08458512602374, "tokens": 322, "queue_s": 0.00018188077956438065, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "2c013098767447b6b60af9883f379ae2", "turn": 5, "decode_s": 0.4812275390140712, "tokens": 35, "queue_s": 0.0005416283383965492, "spec_hit_sample": false}

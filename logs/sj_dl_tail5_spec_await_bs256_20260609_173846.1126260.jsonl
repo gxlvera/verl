@@ -1,0 +1,24 @@
+{"request_id": "efa09b59704a49e28adf0497163846a8", "turn": 4, "active_at_fire": 12, "active_peak": 256, "prompt_len": 3243}
+{"request_id": "df7e2db7cb284d3a9782d95f9b844e70", "turn": 4, "active_at_fire": 12, "active_peak": 256, "prompt_len": 2962}
+{"request_id": "7adaa8c66a294867be0b0ac50fd3bebe", "turn": 5, "active_at_fire": 12, "active_peak": 256, "prompt_len": 3033}
+{"event": "shadow_decode", "request_id": "efa09b59704a49e28adf0497163846a8", "turn": 4, "decode_s": 0.30667532375082374, "tokens": 9, "queue_s": 0.000368582084774971, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "df7e2db7cb284d3a9782d95f9b844e70", "turn": 4, "decode_s": 0.3134389529004693, "tokens": 11, "queue_s": 0.0004606381990015507, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "df7e2db7cb284d3a9782d95f9b844e70", "turn": 4, "decode_s": 0.4449073448777199, "tokens": 15, "queue_s": 0.0005014939233660698, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "7adaa8c66a294867be0b0ac50fd3bebe", "turn": 5, "decode_s": 0.2986925751902163, "tokens": 12, "queue_s": 0.0006250003352761269, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "7adaa8c66a294867be0b0ac50fd3bebe", "turn": 5, "decode_s": 0.6332451403141022, "tokens": 32, "queue_s": 0.0005003740079700947, "spec_hit_sample": true}
+{"request_id": "42cc1aca10814ec599e09452a08820ec", "turn": 5, "active_at_fire": 9, "active_peak": 256, "prompt_len": 3585}
+{"request_id": "a2d9c741434243c6b0ac869702fe7e0e", "turn": 4, "active_at_fire": 9, "active_peak": 256, "prompt_len": 3286}
+{"event": "shadow_decode", "request_id": "a2d9c741434243c6b0ac869702fe7e0e", "turn": 4, "decode_s": 0.4312837957404554, "tokens": 9, "queue_s": 0.0002964506857097149, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "42cc1aca10814ec599e09452a08820ec", "turn": 5, "decode_s": 0.7615101528353989, "tokens": 11, "queue_s": 0.0006131650879979134, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "42cc1aca10814ec599e09452a08820ec", "turn": 5, "decode_s": 0.49323462368920445, "tokens": 32, "queue_s": 0.0006514876149594784, "spec_hit_sample": true}
+{"request_id": "053216ab1b7f4b5b960e3084abc5393a", "turn": 4, "active_at_fire": 6, "active_peak": 256, "prompt_len": 2813}
+{"event": "shadow_decode", "request_id": "053216ab1b7f4b5b960e3084abc5393a", "turn": 4, "decode_s": 0.5215959041379392, "tokens": 29, "queue_s": 0.0007005948573350906, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "efa09b59704a49e28adf0497163846a8", "turn": 4, "decode_s": 4.255087935831398, "tokens": 306, "queue_s": 0.000624821987003088, "spec_hit_sample": true}
+{"request_id": "2e37a250f1714a0a8c5ec5568cf1bb50", "turn": 5, "active_at_fire": 4, "active_peak": 256, "prompt_len": 3698}
+{"event": "shadow_decode", "request_id": "2e37a250f1714a0a8c5ec5568cf1bb50", "turn": 5, "decode_s": 0.4385291859507561, "tokens": 28, "queue_s": 0.0008211680687963963, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "2e37a250f1714a0a8c5ec5568cf1bb50", "turn": 5, "decode_s": 0.4173790360800922, "tokens": 32, "queue_s": 0.0007299431599676609, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "053216ab1b7f4b5b960e3084abc5393a", "turn": 4, "decode_s": 4.207398759201169, "tokens": 297, "queue_s": 0.0005255341529846191, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "a2d9c741434243c6b0ac869702fe7e0e", "turn": 4, "decode_s": 5.271001125685871, "tokens": 404, "queue_s": 0.0005432767793536186, "spec_hit_sample": true}
+{"request_id": "053216ab1b7f4b5b960e3084abc5393a", "turn": 5, "active_at_fire": 1, "active_peak": 256, "prompt_len": 3608}
+{"event": "shadow_decode", "request_id": "053216ab1b7f4b5b960e3084abc5393a", "turn": 5, "decode_s": 0.4088332140818238, "tokens": 29, "queue_s": 0.0007894090376794338, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "053216ab1b7f4b5b960e3084abc5393a", "turn": 5, "decode_s": 5.935957462061197, "tokens": 500, "queue_s": 0.0005911709740757942, "spec_hit_sample": true}

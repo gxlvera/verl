@@ -1,0 +1,24 @@
+{"request_id": "d59a4e382cd54cfebebe04ae82ee2191", "turn": 5, "active_at_fire": 20, "active_peak": 256, "prompt_len": 2873}
+{"event": "shadow_decode", "request_id": "d59a4e382cd54cfebebe04ae82ee2191", "turn": 5, "decode_s": 0.3025928037241101, "tokens": 10, "queue_s": 0.0004808269441127777, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "d59a4e382cd54cfebebe04ae82ee2191", "turn": 5, "decode_s": 0.45122403372079134, "tokens": 14, "queue_s": 0.000689696054905653, "spec_hit_sample": true}
+{"request_id": "078dd13639044c2b8fd0b10ea4492cc1", "turn": 4, "active_at_fire": 16, "active_peak": 256, "prompt_len": 2324}
+{"event": "shadow_decode", "request_id": "078dd13639044c2b8fd0b10ea4492cc1", "turn": 4, "decode_s": 0.7973512057214975, "tokens": 31, "queue_s": 0.0006655650213360786, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "078dd13639044c2b8fd0b10ea4492cc1", "turn": 4, "decode_s": 0.5789299109019339, "tokens": 35, "queue_s": 0.00045979488641023636, "spec_hit_sample": true}
+{"request_id": "b8d0a5a934d74920bedf4c9b930a4612", "turn": 3, "active_at_fire": 15, "active_peak": 256, "prompt_len": 2015}
+{"event": "shadow_decode", "request_id": "b8d0a5a934d74920bedf4c9b930a4612", "turn": 3, "decode_s": 0.49900268390774727, "tokens": 31, "queue_s": 0.00040997378528118134, "spec_hit_sample": true}
+{"request_id": "078dd13639044c2b8fd0b10ea4492cc1", "turn": 5, "active_at_fire": 8, "active_peak": 256, "prompt_len": 2851}
+{"request_id": "c8ffa19f79c44b98a4046e5114183b3d", "turn": 5, "active_at_fire": 8, "active_peak": 256, "prompt_len": 3346}
+{"event": "shadow_decode", "request_id": "078dd13639044c2b8fd0b10ea4492cc1", "turn": 5, "decode_s": 0.18852714402601123, "tokens": 9, "queue_s": 0.0007524951361119747, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "078dd13639044c2b8fd0b10ea4492cc1", "turn": 5, "decode_s": 0.2130281887948513, "tokens": 13, "queue_s": 0.0005762889049947262, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "c8ffa19f79c44b98a4046e5114183b3d", "turn": 5, "decode_s": 0.4703255067579448, "tokens": 28, "queue_s": 0.0006590960547327995, "spec_hit_sample": true}
+{"request_id": "68c8bcc80cc24da695fd9818fa1b8d9a", "turn": 5, "active_at_fire": 5, "active_peak": 256, "prompt_len": 2879}
+{"event": "main_decode", "request_id": "c8ffa19f79c44b98a4046e5114183b3d", "turn": 5, "decode_s": 4.384040104690939, "tokens": 297, "queue_s": 0.0006476771086454391, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "68c8bcc80cc24da695fd9818fa1b8d9a", "turn": 5, "decode_s": 0.4105207258835435, "tokens": 31, "queue_s": 0.0007397206500172615, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "68c8bcc80cc24da695fd9818fa1b8d9a", "turn": 5, "decode_s": 0.5158058772794902, "tokens": 35, "queue_s": 0.0006017480045557022, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "b8d0a5a934d74920bedf4c9b930a4612", "turn": 3, "decode_s": 8.203472215682268, "tokens": 500, "queue_s": 0.0005457149818539619, "spec_hit_sample": true}
+{"request_id": "1c3e0df29213479bb21f3faf94972231", "turn": 4, "active_at_fire": 2, "active_peak": 256, "prompt_len": 2838}
+{"event": "shadow_decode", "request_id": "1c3e0df29213479bb21f3faf94972231", "turn": 4, "decode_s": 0.27172571467235684, "tokens": 9, "queue_s": 0.0004041241481900215, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "1c3e0df29213479bb21f3faf94972231", "turn": 4, "decode_s": 0.19094696594402194, "tokens": 13, "queue_s": 0.0006880559958517551, "spec_hit_sample": true}
+{"request_id": "8eee09ac9ce248c289b93bc4a8dc23d6", "turn": 5, "active_at_fire": 1, "active_peak": 256, "prompt_len": 3787}
+{"event": "shadow_decode", "request_id": "8eee09ac9ce248c289b93bc4a8dc23d6", "turn": 5, "decode_s": 0.4834328289143741, "tokens": 22, "queue_s": 0.0005213129334151745, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "8eee09ac9ce248c289b93bc4a8dc23d6", "turn": 5, "decode_s": 0.35676220105960965, "tokens": 26, "queue_s": 0.0008219573646783829, "spec_hit_sample": true}

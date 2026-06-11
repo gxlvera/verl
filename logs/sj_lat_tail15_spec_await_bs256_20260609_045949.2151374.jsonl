@@ -1,0 +1,5 @@
+{"request_id": "474ab16b3f30476f8be8dde62d6de825", "turn": 3, "active_at_fire": 33, "active_peak": 256, "prompt_len": 1991}
+{"request_id": "17cd7002a05247cdaf207698f974052d", "turn": 4, "active_at_fire": 33, "active_peak": 256, "prompt_len": 2913}
+{"event": "shadow_decode", "request_id": "474ab16b3f30476f8be8dde62d6de825", "turn": 3, "decode_s": 0.7722550691105425, "tokens": 26, "queue_s": 0.0006530792452394962, "spec_hit_sample": false}
+{"request_id": "b2b971d7c81e419fb68d8524a8445686", "turn": 3, "active_at_fire": 22, "active_peak": 256, "prompt_len": 2174}
+{"request_id": "a0ac76b646d84aa3ac6dafe55d7a44be", "turn": 3, "active_at_fire": 21, "active_peak": 256, "prompt_len": 2386}

@@ -1,0 +1,5 @@
+lat_tail15_await_bs256_20260609_062548 -> perf/throughput:4750.805176658892 perf/time_per_step:112.88462798576802
+lat_tail10_await_bs256_20260609_062548 -> perf/throughput:5280.3068625144615 perf/time_per_step:102.7747087678872
+lat_tail10_spec_await_bs256_20260609_062548 -> perf/throughput:4413.580057873945 perf/time_per_step:123.42381192976609
+lat_tail5_await_bs256_20260609_062548 -> perf/throughput:5250.113486691327 perf/time_per_step:103.2126498548314
+lat_tail5_spec_await_bs256_20260609_062548 -> perf/throughput:4836.644125243616 perf/time_per_step:112.91540391603485

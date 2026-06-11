@@ -1,0 +1,12 @@
+{"request_id": "e7fb5e4bbc4a4cb982436fadc5fdfccd", "turn": 5, "active_at_fire": 10, "active_peak": 256, "prompt_len": 2912}
+{"event": "shadow_decode", "request_id": "e7fb5e4bbc4a4cb982436fadc5fdfccd", "turn": 5, "decode_s": 0.498413291759789, "tokens": 11, "queue_s": 0.0002717808820307255, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "e7fb5e4bbc4a4cb982436fadc5fdfccd", "turn": 5, "decode_s": 0.2800094676204026, "tokens": 15, "queue_s": 0.0005131969228386879, "spec_hit_sample": true}
+{"request_id": "0418240787c44d0d9c72b168d323b44a", "turn": 4, "active_at_fire": 5, "active_peak": 256, "prompt_len": 2450}
+{"event": "shadow_decode", "request_id": "0418240787c44d0d9c72b168d323b44a", "turn": 4, "decode_s": 0.2638424327597022, "tokens": 10, "queue_s": 0.00028961896896362305, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "0418240787c44d0d9c72b168d323b44a", "turn": 4, "decode_s": 0.26242553908377886, "tokens": 14, "queue_s": 0.0004390510730445385, "spec_hit_sample": true}
+{"request_id": "ea2832bee58040fa88bfdd2e87858ac2", "turn": 4, "active_at_fire": 2, "active_peak": 256, "prompt_len": 2655}
+{"event": "shadow_decode", "request_id": "ea2832bee58040fa88bfdd2e87858ac2", "turn": 4, "decode_s": 0.43119012797251344, "tokens": 11, "queue_s": 0.0005678175948560238, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "ea2832bee58040fa88bfdd2e87858ac2", "turn": 4, "decode_s": 0.23647708678618073, "tokens": 15, "queue_s": 0.00047264620661735535, "spec_hit_sample": true}
+{"request_id": "66bd7affaaae4508be605b5d1971fbe6", "turn": 5, "active_at_fire": 1, "active_peak": 256, "prompt_len": 2915}
+{"event": "shadow_decode", "request_id": "66bd7affaaae4508be605b5d1971fbe6", "turn": 5, "decode_s": 0.22623734129592776, "tokens": 11, "queue_s": 0.0004329378716647625, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "66bd7affaaae4508be605b5d1971fbe6", "turn": 5, "decode_s": 0.2553605870343745, "tokens": 15, "queue_s": 0.000505595002323389, "spec_hit_sample": true}

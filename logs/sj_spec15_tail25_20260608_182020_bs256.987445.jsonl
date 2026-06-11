@@ -1,0 +1,14 @@
+{"request_id": "bad7cea41ddd4780932e34e15f23d112", "turn": 4, "active_at_fire": 48, "active_peak": 256, "prompt_len": 2379}
+{"request_id": "f2b58b191d4d459bb733694318ea6d89", "turn": 3, "active_at_fire": 47, "active_peak": 256, "prompt_len": 1865}
+{"request_id": "49115de3ed364c4888494144763dd9a9", "turn": 4, "active_at_fire": 43, "active_peak": 256, "prompt_len": 2392}
+{"event": "main_decode", "request_id": "bad7cea41ddd4780932e34e15f23d112", "turn": 4, "decode_s": 1.3023297982290387, "tokens": 30, "queue_s": 0.0005519050173461437, "spec_hit_sample": false}
+{"request_id": "bad7cea41ddd4780932e34e15f23d112", "turn": 5, "active_at_fire": 28, "active_peak": 256, "prompt_len": 2921}
+{"event": "main_decode", "request_id": "f2b58b191d4d459bb733694318ea6d89", "turn": 3, "decode_s": 2.94228934077546, "tokens": 112, "queue_s": 0.00033603329211473465, "spec_hit_sample": false}
+{"request_id": "0b982d4c28e14e03a772f8d937ea75c7", "turn": 3, "active_at_fire": 20, "active_peak": 256, "prompt_len": 2239}
+{"event": "main_decode", "request_id": "0b982d4c28e14e03a772f8d937ea75c7", "turn": 3, "decode_s": 0.8370286878198385, "tokens": 34, "queue_s": 0.00038655567914247513, "spec_hit_sample": true}
+{"event": "shadow_decode", "request_id": "bad7cea41ddd4780932e34e15f23d112", "turn": 5, "decode_s": 3.3879509870894253, "tokens": 154, "queue_s": 0.00014584604650735855, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "bad7cea41ddd4780932e34e15f23d112", "turn": 5, "decode_s": 3.439068808220327, "tokens": 145, "queue_s": 0.0004084194079041481, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "49115de3ed364c4888494144763dd9a9", "turn": 4, "decode_s": 7.297382004093379, "tokens": 357, "queue_s": 0.00023866211995482445, "spec_hit_sample": false}
+{"request_id": "0b982d4c28e14e03a772f8d937ea75c7", "turn": 4, "active_at_fire": 1, "active_peak": 256, "prompt_len": 2785}
+{"event": "shadow_decode", "request_id": "0b982d4c28e14e03a772f8d937ea75c7", "turn": 4, "decode_s": 2.132052786182612, "tokens": 156, "queue_s": 0.0002544000744819641, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "0b982d4c28e14e03a772f8d937ea75c7", "turn": 4, "decode_s": 4.315222454257309, "tokens": 322, "queue_s": 0.00043177930638194084, "spec_hit_sample": true}

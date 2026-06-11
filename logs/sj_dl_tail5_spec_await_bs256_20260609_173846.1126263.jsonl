@@ -1,0 +1,12 @@
+{"request_id": "73f8ec1ca27344c993fb8cf19130319f", "turn": 5, "active_at_fire": 12, "active_peak": 256, "prompt_len": 3169}
+{"event": "shadow_decode", "request_id": "73f8ec1ca27344c993fb8cf19130319f", "turn": 5, "decode_s": 0.3314520516432822, "tokens": 25, "queue_s": 0.000669592060148716, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "73f8ec1ca27344c993fb8cf19130319f", "turn": 5, "decode_s": 0.6653664340265095, "tokens": 29, "queue_s": 0.0008321688510477543, "spec_hit_sample": true}
+{"request_id": "5cae06ad3c514dafb35635340d4a76c9", "turn": 5, "active_at_fire": 8, "active_peak": 256, "prompt_len": 2996}
+{"event": "shadow_decode", "request_id": "5cae06ad3c514dafb35635340d4a76c9", "turn": 5, "decode_s": 0.45919876219704747, "tokens": 29, "queue_s": 0.0006430088542401791, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "5cae06ad3c514dafb35635340d4a76c9", "turn": 5, "decode_s": 0.4747175402007997, "tokens": 33, "queue_s": 0.0004873601719737053, "spec_hit_sample": true}
+{"request_id": "f4fe3609761f4e4e82a452e75aa9ce1c", "turn": 5, "active_at_fire": 3, "active_peak": 256, "prompt_len": 2998}
+{"event": "shadow_decode", "request_id": "f4fe3609761f4e4e82a452e75aa9ce1c", "turn": 5, "decode_s": 0.9691228647716343, "tokens": 33, "queue_s": 0.0005394970066845417, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "f4fe3609761f4e4e82a452e75aa9ce1c", "turn": 5, "decode_s": 0.5956851579248905, "tokens": 37, "queue_s": 0.0004163067787885666, "spec_hit_sample": true}
+{"request_id": "04555ca302f045fb97c8cc866797d320", "turn": 5, "active_at_fire": 1, "active_peak": 256, "prompt_len": 2998}
+{"event": "shadow_decode", "request_id": "04555ca302f045fb97c8cc866797d320", "turn": 5, "decode_s": 0.7041583969257772, "tokens": 33, "queue_s": 0.0005736462771892548, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "04555ca302f045fb97c8cc866797d320", "turn": 5, "decode_s": 0.6961349681951106, "tokens": 37, "queue_s": 0.0004328773356974125, "spec_hit_sample": true}

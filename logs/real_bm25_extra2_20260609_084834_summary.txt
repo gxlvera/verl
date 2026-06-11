@@ -1,0 +1,2 @@
+lat_baseline_extra_bs256_20260609_084834 -> perf/throughput:5150.546100876552 perf/time_per_step:105.25262552406639
+lat_tail5_await_extra_bs256_20260609_084834 -> perf/throughput:4411.367808262361 perf/time_per_step:124.98915279004723

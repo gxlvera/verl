@@ -1,0 +1,5 @@
+{"request_id": "3472cafee0a54bffbb8c70985da30cdd", "turn": 4, "active_at_fire": 9, "active_peak": 256, "prompt_len": 3285}
+{"request_id": "30fcc01929c04515b89edf1dcce5c582", "turn": 4, "active_at_fire": 8, "active_peak": 256, "prompt_len": 3387}
+{"event": "main_decode", "request_id": "30fcc01929c04515b89edf1dcce5c582", "turn": 4, "decode_s": 4.45965587021783, "tokens": 303, "queue_s": 0.000613371841609478, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "3472cafee0a54bffbb8c70985da30cdd", "turn": 4, "decode_s": 6.407730161212385, "tokens": 454, "queue_s": 0.00018109101802110672, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "3472cafee0a54bffbb8c70985da30cdd", "turn": 4, "decode_s": 6.978008756879717, "tokens": 500, "queue_s": 0.0006655543111264706, "spec_hit_sample": false}

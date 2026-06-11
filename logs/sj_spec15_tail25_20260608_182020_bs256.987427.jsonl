@@ -1,0 +1,13 @@
+{"request_id": "a51382dd9e6c46a7ba7d8546e06cb3bc", "turn": 4, "active_at_fire": 52, "active_peak": 256, "prompt_len": 2386}
+{"request_id": "de531ad11406418b8795f412bb2198d4", "turn": 3, "active_at_fire": 29, "active_peak": 256, "prompt_len": 1832}
+{"request_id": "82b36a989fd3404fab1265d17746e64c", "turn": 3, "active_at_fire": 28, "active_peak": 256, "prompt_len": 2021}
+{"event": "shadow_decode", "request_id": "a51382dd9e6c46a7ba7d8546e06cb3bc", "turn": 4, "decode_s": 3.283934131730348, "tokens": 126, "queue_s": 0.00022755004465579987, "spec_hit_sample": false}
+{"request_id": "0cc956a6e25c43aa8b033e76e5159537", "turn": 3, "active_at_fire": 13, "active_peak": 256, "prompt_len": 2225}
+{"event": "shadow_decode", "request_id": "de531ad11406418b8795f412bb2198d4", "turn": 3, "decode_s": 4.8243706482462585, "tokens": 232, "queue_s": 0.00013105617836117744, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "de531ad11406418b8795f412bb2198d4", "turn": 3, "decode_s": 4.965495421085507, "tokens": 234, "queue_s": 0.00022732187062501907, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "82b36a989fd3404fab1265d17746e64c", "turn": 3, "decode_s": 5.1428974298760295, "tokens": 242, "queue_s": 0.0005035679787397385, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "a51382dd9e6c46a7ba7d8546e06cb3bc", "turn": 4, "decode_s": 8.475673562847078, "tokens": 336, "queue_s": 0.00041002314537763596, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "0cc956a6e25c43aa8b033e76e5159537", "turn": 3, "decode_s": 3.2315376149490476, "tokens": 221, "queue_s": 0.00047012511640787125, "spec_hit_sample": true}
+{"request_id": "57321e10edeb4128a530532191a5d539", "turn": 5, "active_at_fire": 1, "active_peak": 256, "prompt_len": 2934}
+{"event": "shadow_decode", "request_id": "57321e10edeb4128a530532191a5d539", "turn": 5, "decode_s": 5.67720947926864, "tokens": 482, "queue_s": 0.00023241201415657997, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "57321e10edeb4128a530532191a5d539", "turn": 5, "decode_s": 5.9301326661370695, "tokens": 488, "queue_s": 0.0003779362887144089, "spec_hit_sample": false}

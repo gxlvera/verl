@@ -1,0 +1,12 @@
+{"request_id": "c2390a14ae1d448fa5bbc6f1ee747fdb", "turn": 4, "active_at_fire": 21, "active_peak": 256, "prompt_len": 2873}
+{"request_id": "d283afb0cfc84ce1865a016088e7de71", "turn": 3, "active_at_fire": 10, "active_peak": 256, "prompt_len": 2148}
+{"event": "shadow_decode", "request_id": "d283afb0cfc84ce1865a016088e7de71", "turn": 3, "decode_s": 1.2084404560737312, "tokens": 62, "queue_s": 0.00034508295357227325, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "d283afb0cfc84ce1865a016088e7de71", "turn": 3, "decode_s": 0.3391992300748825, "tokens": 12, "queue_s": 0.0002865549176931381, "spec_hit_sample": true}
+{"request_id": "23a97ba2bffa4b478c4f2e628dd4701d", "turn": 4, "active_at_fire": 4, "active_peak": 256, "prompt_len": 2965}
+{"event": "shadow_decode", "request_id": "c2390a14ae1d448fa5bbc6f1ee747fdb", "turn": 4, "decode_s": 8.4461573921144, "tokens": 500, "queue_s": 0.00016613677144050598, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "c2390a14ae1d448fa5bbc6f1ee747fdb", "turn": 4, "decode_s": 0.515667465981096, "tokens": 17, "queue_s": 0.0005592070519924164, "spec_hit_sample": false}
+{"request_id": "f9d6d6a2e6134aa391a906aa149e7768", "turn": 3, "active_at_fire": 2, "active_peak": 256, "prompt_len": 1988}
+{"event": "shadow_decode", "request_id": "23a97ba2bffa4b478c4f2e628dd4701d", "turn": 4, "decode_s": 5.974332368001342, "tokens": 382, "queue_s": 0.00018806196749210358, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "23a97ba2bffa4b478c4f2e628dd4701d", "turn": 4, "decode_s": 2.5412936261855066, "tokens": 135, "queue_s": 0.0004335031844675541, "spec_hit_sample": false}
+{"event": "shadow_decode", "request_id": "f9d6d6a2e6134aa391a906aa149e7768", "turn": 3, "decode_s": 1.9062179676257074, "tokens": 121, "queue_s": 0.0001532980240881443, "spec_hit_sample": true}
+{"event": "main_decode", "request_id": "f9d6d6a2e6134aa391a906aa149e7768", "turn": 3, "decode_s": 7.021877862978727, "tokens": 500, "queue_s": 0.0002719918265938759, "spec_hit_sample": true}

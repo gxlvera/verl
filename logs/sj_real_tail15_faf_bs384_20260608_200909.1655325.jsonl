@@ -1,0 +1,26 @@
+{"request_id": "1d2cb5b75235488b88dda1a4147bc8fc", "turn": 5, "active_at_fire": 53, "active_peak": 384, "prompt_len": 2978}
+{"request_id": "4c13c8f1234c44e1b1ce3c1f12440112", "turn": 4, "active_at_fire": 51, "active_peak": 384, "prompt_len": 2919}
+{"request_id": "607626fef2a14d4b99d02fdc76dc7492", "turn": 5, "active_at_fire": 51, "active_peak": 384, "prompt_len": 3370}
+{"request_id": "e18f4191434c4d388f42e571721b8fbc", "turn": 5, "active_at_fire": 51, "active_peak": 384, "prompt_len": 3158}
+{"event": "main_decode", "request_id": "1d2cb5b75235488b88dda1a4147bc8fc", "turn": 5, "decode_s": 1.2954533193260431, "tokens": 30, "queue_s": 0.0008683148771524429, "spec_hit_sample": false}
+{"request_id": "c0d97761467a49ff8094c19a66d53471", "turn": 5, "active_at_fire": 49, "active_peak": 384, "prompt_len": 3018}
+{"event": "main_decode", "request_id": "e18f4191434c4d388f42e571721b8fbc", "turn": 5, "decode_s": 0.5343791050836444, "tokens": 13, "queue_s": 0.000676122959703207, "spec_hit_sample": false}
+{"request_id": "9874f575a5934b8999ff6b5892be55c3", "turn": 4, "active_at_fire": 47, "active_peak": 384, "prompt_len": 2387}
+{"request_id": "51fd8cc0c8404f759d1378d57ad09fbd", "turn": 5, "active_at_fire": 47, "active_peak": 384, "prompt_len": 2985}
+{"request_id": "b02a7ae834364e83ad6dd840a9fe4892", "turn": 5, "active_at_fire": 47, "active_peak": 384, "prompt_len": 2985}
+{"event": "main_decode", "request_id": "607626fef2a14d4b99d02fdc76dc7492", "turn": 5, "decode_s": 1.3703621728345752, "tokens": 34, "queue_s": 0.000553846824914217, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "c0d97761467a49ff8094c19a66d53471", "turn": 5, "decode_s": 0.9584704330191016, "tokens": 29, "queue_s": 0.0005781501531600952, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "51fd8cc0c8404f759d1378d57ad09fbd", "turn": 5, "decode_s": 1.0381888281553984, "tokens": 35, "queue_s": 0.0008588372729718685, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "b02a7ae834364e83ad6dd840a9fe4892", "turn": 5, "decode_s": 1.038316607940942, "tokens": 35, "queue_s": 0.0008505829609930515, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "9874f575a5934b8999ff6b5892be55c3", "turn": 4, "decode_s": 1.1793876071460545, "tokens": 32, "queue_s": 0.0005282699130475521, "spec_hit_sample": false}
+{"request_id": "9874f575a5934b8999ff6b5892be55c3", "turn": 5, "active_at_fire": 38, "active_peak": 384, "prompt_len": 2939}
+{"request_id": "786429d2823245ee9037b6d0734ecfcf", "turn": 4, "active_at_fire": 33, "active_peak": 384, "prompt_len": 2976}
+{"request_id": "0be6276440a8493489ffa19a76821a7b", "turn": 4, "active_at_fire": 33, "active_peak": 384, "prompt_len": 2426}
+{"event": "main_decode", "request_id": "9874f575a5934b8999ff6b5892be55c3", "turn": 5, "decode_s": 1.0752268680371344, "tokens": 31, "queue_s": 0.0006009121425449848, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "4c13c8f1234c44e1b1ce3c1f12440112", "turn": 4, "decode_s": 3.4371477640233934, "tokens": 129, "queue_s": 0.0005803513340651989, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "0be6276440a8493489ffa19a76821a7b", "turn": 4, "decode_s": 1.0221227649599314, "tokens": 32, "queue_s": 0.000410452950745821, "spec_hit_sample": false}
+{"request_id": "0be6276440a8493489ffa19a76821a7b", "turn": 5, "active_at_fire": 22, "active_peak": 384, "prompt_len": 2978}
+{"event": "main_decode", "request_id": "0be6276440a8493489ffa19a76821a7b", "turn": 5, "decode_s": 0.8276310660876334, "tokens": 30, "queue_s": 0.0005111126229166985, "spec_hit_sample": false}
+{"request_id": "20a694357ab24375b9f2a3219ef4b28a", "turn": 5, "active_at_fire": 16, "active_peak": 384, "prompt_len": 3575}
+{"event": "main_decode", "request_id": "20a694357ab24375b9f2a3219ef4b28a", "turn": 5, "decode_s": 0.35217774100601673, "tokens": 14, "queue_s": 0.0005816477350890636, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "786429d2823245ee9037b6d0734ecfcf", "turn": 4, "decode_s": 5.297219758853316, "tokens": 291, "queue_s": 0.0005664308555424213, "spec_hit_sample": false}

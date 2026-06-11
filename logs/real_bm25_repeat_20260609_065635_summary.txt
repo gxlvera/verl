@@ -1,0 +1,9 @@
+lat_baseline_r1_bs256_20260609_065635 -> perf/throughput:4703.995695831893 perf/time_per_step:113.73134343512356
+lat_tail10_await_r1_bs256_20260609_065635 -> perf/throughput:5157.808337273149 perf/time_per_step:104.81721879681572
+lat_tail10_spec_await_r1_bs256_20260609_065635 -> perf/throughput:4800.948731681277 perf/time_per_step:111.80800504237413
+lat_baseline_r2_bs256_20260609_065635 -> FAILED 
+lat_tail10_await_r2_bs256_20260609_065635 -> perf/throughput:4806.348690316599 perf/time_per_step:112.55129098100588
+lat_tail10_spec_await_r2_bs256_20260609_065635 -> perf/throughput:4973.533986290331 perf/time_per_step:110.76862076716498
+lat_baseline_r3_bs256_20260609_065635 -> perf/throughput:5020.460935501912 perf/time_per_step:107.63411605870351
+lat_tail10_await_r3_bs256_20260609_065635 -> perf/throughput:4764.863265132715 perf/time_per_step:113.33968992391601
+lat_tail10_spec_await_r3_bs256_20260609_065635 -> FAILED 

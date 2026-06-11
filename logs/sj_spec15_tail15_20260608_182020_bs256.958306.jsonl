@@ -1,0 +1,2 @@
+{"request_id": "d7fbb84d1c4a4c97997fb1a1a96f1292", "turn": 4, "active_at_fire": 35, "active_peak": 256, "prompt_len": 2393}
+{"event": "main_decode", "request_id": "d7fbb84d1c4a4c97997fb1a1a96f1292", "turn": 4, "decode_s": 6.93616292392835, "tokens": 420, "queue_s": 0.0003573670983314514, "spec_hit_sample": false}

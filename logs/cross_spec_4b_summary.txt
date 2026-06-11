@@ -1,0 +1,18 @@
+
+===== drafter=4B  target=8B =====
+turn  reach tgt_call drf_call   both   name= name+args=  query= match/tgt_call match/reach
+   1   2048     1465     2048   1465  100.0%      16.6%   16.6%         16.6%       11.9%
+   2   2048     1408     1477   1211  100.0%      54.6%   54.6%         46.9%       32.3%
+   3   1408      574      340    234  100.0%      44.4%   44.4%         18.1%        7.4%
+   4    574      346       48     40  100.0%      40.0%   40.0%          4.6%        2.8%
+   5    346      245       15     13  100.0%      61.5%   61.5%          3.3%        2.3%
+>=3 full(name+args): match/both=44.6% (n=287)  match/tgt_call=11.0%  match/reach=5.5%
+
+===== drafter=4B  target=14B =====
+turn  reach tgt_call drf_call   both   name= name+args=  query= match/tgt_call match/reach
+   1   1024      792     1024    792  100.0%      13.6%   13.6%         13.6%       10.5%
+   2   1024      498      633    404  100.0%      42.6%   42.6%         34.5%       16.8%
+   3    498      139       71     49  100.0%      46.9%   46.9%         16.5%        4.6%
+   4    139       42        4      2  100.0%     100.0%  100.0%          4.8%        1.4%
+   5     42       18        2      1  100.0%       0.0%    0.0%          0.0%        0.0%
+>=3 full(name+args): match/both=48.1% (n=52)  match/tgt_call=12.6%  match/reach=3.7%

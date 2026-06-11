@@ -1,0 +1,7 @@
+lat_baseline_bs256_20260609_045949 -> perf/throughput:4873.5996088183265 perf/time_per_step:111.18347699707374
+lat_full_await_bs256_20260609_045949 -> perf/throughput:3196.364503500417 perf/time_per_step:168.16002974985167
+lat_tail25_await_bs256_20260609_045949 -> perf/throughput:4766.469607942817 perf/time_per_step:113.5771429440938
+lat_tail15_await_bs256_20260609_045949 -> perf/throughput:4497.216300663379 perf/time_per_step:120.98973311996087
+lat_full_spec_await_bs256_20260609_045949 -> perf/throughput:3202.113375616157 perf/time_per_step:166.96543416334316
+lat_tail25_spec_await_bs256_20260609_045949 -> perf/throughput:4816.203041821508 perf/time_per_step:112.61389320390299
+lat_tail15_spec_await_bs256_20260609_045949 -> FAILED 

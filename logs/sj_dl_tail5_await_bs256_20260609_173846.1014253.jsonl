@@ -1,0 +1,12 @@
+{"request_id": "aa5005afa78f45aeb882fa51c8266ef6", "turn": 5, "active_at_fire": 7, "active_peak": 256, "prompt_len": 3597}
+{"event": "shadow_decode", "request_id": "aa5005afa78f45aeb882fa51c8266ef6", "turn": 5, "decode_s": 0.767229288816452, "tokens": 26, "queue_s": 0.0004595611244440079, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "aa5005afa78f45aeb882fa51c8266ef6", "turn": 5, "decode_s": 0.5537577657960355, "tokens": 30, "queue_s": 0.0005846661515533924, "spec_hit_sample": false}
+{"request_id": "d050a7c818f44ec2a36bcd31f43acb3e", "turn": 5, "active_at_fire": 4, "active_peak": 256, "prompt_len": 2772}
+{"event": "shadow_decode", "request_id": "d050a7c818f44ec2a36bcd31f43acb3e", "turn": 5, "decode_s": 0.4171310127712786, "tokens": 27, "queue_s": 0.0005463459528982639, "spec_hit_sample": false}
+{"request_id": "596a06aa5e2a4ea69abe22b79b7657d8", "turn": 4, "active_at_fire": 2, "active_peak": 256, "prompt_len": 2239}
+{"event": "shadow_decode", "request_id": "596a06aa5e2a4ea69abe22b79b7657d8", "turn": 4, "decode_s": 0.47556471498683095, "tokens": 28, "queue_s": 0.0003789681941270828, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "596a06aa5e2a4ea69abe22b79b7657d8", "turn": 4, "decode_s": 0.4810218419879675, "tokens": 32, "queue_s": 0.0004628119058907032, "spec_hit_sample": false}
+{"request_id": "596a06aa5e2a4ea69abe22b79b7657d8", "turn": 5, "active_at_fire": 2, "active_peak": 256, "prompt_len": 2756}
+{"event": "shadow_decode", "request_id": "596a06aa5e2a4ea69abe22b79b7657d8", "turn": 5, "decode_s": 0.3764674789272249, "tokens": 28, "queue_s": 0.0006033992394804955, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "596a06aa5e2a4ea69abe22b79b7657d8", "turn": 5, "decode_s": 0.4124013129621744, "tokens": 32, "queue_s": 0.0006133979186415672, "spec_hit_sample": false}
+{"event": "main_decode", "request_id": "d050a7c818f44ec2a36bcd31f43acb3e", "turn": 5, "decode_s": 6.98494778200984, "tokens": 500, "queue_s": 0.0005407799035310745, "spec_hit_sample": false}
