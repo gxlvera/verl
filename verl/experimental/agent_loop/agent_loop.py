@@ -307,7 +307,7 @@ class AgentLoopBase(ABC):
     async def ct_merge_non_assistant_msg(
         self,
         previous_messages: list[dict],
-        next_messages: list[dict],
+        updated_messages: list[dict],
         runtime_token_ids: list[int],
         response_mask: list[int],
         response_logprobs: Optional[list[float]] = None,
@@ -317,7 +317,7 @@ class AgentLoopBase(ABC):
             None,
             lambda: self.continuous_token_builder.merge_tokens(
                 previous_messages,
-                next_messages,
+                updated_messages,
                 runtime_token_ids,
                 tools=tools,
             ),
