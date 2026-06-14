@@ -293,7 +293,7 @@ class AgentLoopBase(ABC):
 
         return multi_modal_data
 
-    async def ct_build_initial_prompt(
+    async def ct_build_initial_tokens(
         self,
         messages: list[dict],
         tools: list[dict] = None,

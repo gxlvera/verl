@@ -210,7 +210,7 @@ class ToolAgentLoop(AgentLoopBase):
         """Handle the pending state: prepare the prompt and start generation."""
         schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
         if self.enable_continuous_token:
-            prompt_ids = await self.ct_build_initial_prompt(agent_data.messages, tools=schemas)
+            prompt_ids = await self.ct_build_initial_tokens(agent_data.messages, tools=schemas)
         else:
             prompt_ids = await self.apply_chat_template(
                 agent_data.messages,

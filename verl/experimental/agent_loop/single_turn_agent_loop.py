@@ -48,7 +48,7 @@ class SingleTurnAgentLoop(AgentLoopBase):
         # 2. apply chat template and tokenize
         use_continuous_token = self.enable_continuous_token and not multi_modal_data
         if use_continuous_token:
-            prompt_ids = await self.ct_build_initial_prompt(messages)
+            prompt_ids = await self.ct_build_initial_tokens(messages)
         else:
             prompt_ids = await self.apply_chat_template(
                 messages,
