@@ -185,6 +185,12 @@ def infer_continuous_token_model_family(
         or any(marker in compact for marker in ("qwen25", "qwen3", "qwen35"))
     ):
         return "qwen"
+    logger.warning(
+        "No model-specific Continuous Token builder matched model_path=%r, tokenizer_name_or_path=%r; "
+        "falling back to the default ContinuousTokenBuilder.",
+        model_path,
+        tokenizer_name_or_path or _tokenizer_name_or_path(tokenizer),
+    )
     return "default"
 
 
