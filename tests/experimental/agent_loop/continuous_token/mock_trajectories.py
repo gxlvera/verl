@@ -285,7 +285,8 @@ MULTITURN_SINGLE_TOOL = ToolAgentTrajectory(
         ),
         TrajectoryStep(
             assistant=_assistant(
-                "Choose Portland. It is cloudy rather than rainy, warmer, and less windy; keep Seattle as the indoor fallback."
+                "Choose Portland. It is cloudy rather than rainy, warmer, and less windy; "
+                "keep Seattle as the indoor fallback."
             )
         ),
     ),
@@ -429,9 +430,7 @@ MULTITURN_RETRY_USER = ToolAgentTrajectory(
                 ),
             ),
         ),
-        TrajectoryStep(
-            assistant=_assistant("Maple Room is reserved from 10:00 to 10:30. Confirmation: room-4821.")
-        ),
+        TrajectoryStep(assistant=_assistant("Maple Room is reserved from 10:00 to 10:30. Confirmation: room-4821.")),
     ),
 )
 
@@ -479,9 +478,7 @@ MULTITURN_RETRY_SYSTEM = ToolAgentTrajectory(
                 ),
             ),
         ),
-        TrajectoryStep(
-            assistant=_assistant("Incident INC-1042 is mitigated, and the current owner is edge-oncall.")
-        ),
+        TrajectoryStep(assistant=_assistant("Incident INC-1042 is mitigated, and the current owner is edge-oncall.")),
     ),
 )
 
@@ -521,7 +518,9 @@ def get_tool_agent_trajectory(name: str) -> ToolAgentTrajectory:
     try:
         return TOOL_AGENT_TRAJECTORY_BY_NAME[name]
     except KeyError as exc:
-        raise ValueError(f"Unknown tool-agent trajectory {name!r}. Choices: {sorted(TOOL_AGENT_TRAJECTORY_BY_NAME)}") from exc
+        raise ValueError(
+            f"Unknown tool-agent trajectory {name!r}. Choices: {sorted(TOOL_AGENT_TRAJECTORY_BY_NAME)}"
+        ) from exc
 
 
 def select_tool_agent_trajectories(names: list[str] | None = None) -> list[ToolAgentTrajectory]:

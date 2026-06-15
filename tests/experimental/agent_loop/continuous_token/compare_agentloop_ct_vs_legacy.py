@@ -27,9 +27,9 @@ This avoids hard-coding a Hermes-style raw ``<tool_call>`` string as the model
 output and lets each tokenizer render structured ``assistant.tool_calls`` in
 its own canonical format.
 
-In order to mimic the model's generation behavior, if the suffix contains EOS, 
-truncate after the final EOS token to mimic rollout stopping at EOS instead of 
-returning template whitespace that follows it. Missing EOS is allowed only for GLM; 
+In order to mimic the model's generation behavior, if the suffix contains EOS,
+truncate after the final EOS token to mimic rollout stopping at EOS instead of
+returning template whitespace that follows it. Missing EOS is allowed only for GLM;
 GLM tool-call turns append the assistant/tool boundary token ``<|observation|>``.
 
 CT and legacy are then compared by running the real
@@ -73,7 +73,6 @@ from verl.utils.chat_template import apply_chat_template
 from verl.utils.tokenizer import normalize_token_ids
 from verl.workers.rollout.replica import TokenOutput
 
-
 DEFAULT_E2E_TRAJECTORIES = ("singleturnchat", "multiturnsingletool", "multiturnmultitool")
 
 
@@ -107,7 +106,7 @@ DEFAULT_MODELS = [
     "XiaomiMiMo/MiMo-7B-RL",
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
     "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
-    "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16"
+    "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
 ]
 
 
@@ -332,7 +331,7 @@ def _tokenizer_eos_token_ids(tokenizer) -> set[int]:
         return set()
     if isinstance(eos_token_id, int):
         return {eos_token_id}
-    if isinstance(eos_token_id, (list, tuple, set)):
+    if isinstance(eos_token_id, list | tuple | set):
         return {int(token_id) for token_id in eos_token_id if token_id is not None}
     raise TypeError(f"Unsupported eos_token_id type: {type(eos_token_id)!r}")
 
@@ -361,17 +360,15 @@ def _truncate_after_final_eos(
 
     tail = token_ids[-16:]
     raise ValueError(
-        "Assistant output token-id suffix does not contain eos_token_id "
-        f"{sorted(eos_token_ids)}; tail={tail}"
+        f"Assistant output token-id suffix does not contain eos_token_id {sorted(eos_token_ids)}; tail={tail}"
     )
 
 
 def _is_glm_tokenizer(tokenizer) -> bool:
     tokenizer_name = _tokenizer_name(tokenizer).lower()
     compact_name = "".join(char for char in tokenizer_name if char.isalnum())
-    return (
-        any(marker in tokenizer_name for marker in ("glm-4.7", "glm_4.7", "glm-5", "glm_5"))
-        or any(marker in compact_name for marker in ("glm47", "glm5"))
+    return any(marker in tokenizer_name for marker in ("glm-4.7", "glm_4.7", "glm-5", "glm_5")) or any(
+        marker in compact_name for marker in ("glm47", "glm5")
     )
 
 
@@ -425,7 +422,9 @@ def _prepare_assistant_outputs(
             )
         )
         canonical_messages.append(assistant_message)
-        canonical_messages.extend(json.loads(json.dumps(message, ensure_ascii=False)) for message in step.appended_messages)
+        canonical_messages.extend(
+            json.loads(json.dumps(message, ensure_ascii=False)) for message in step.appended_messages
+        )
 
     return assistant_outputs
 
@@ -903,7 +902,9 @@ def _compare_generation_prompts(legacy: E2ERunOutput, ct: E2ERunOutput) -> dict[
     comparisons = []
     turn_count = max(len(legacy.generation_prompt_ids), len(ct.generation_prompt_ids))
     for turn_index in range(turn_count):
-        legacy_ids = legacy.generation_prompt_ids[turn_index] if turn_index < len(legacy.generation_prompt_ids) else None
+        legacy_ids = (
+            legacy.generation_prompt_ids[turn_index] if turn_index < len(legacy.generation_prompt_ids) else None
+        )
         ct_ids = ct.generation_prompt_ids[turn_index] if turn_index < len(ct.generation_prompt_ids) else None
         comparisons.append({"turn": turn_index + 1, **_compare_sequence(legacy_ids, ct_ids)})
     return {
@@ -1403,6 +1404,15 @@ def _format_ct_full_state(raw_match: Any, material_equal: Any) -> str:
     return f"raw_match={raw_match} material_mismatch={material_mismatch}"
 
 
+def _format_result_match_state(result: dict[str, Any]) -> str:
+    ct_legacy_state = _format_ct_legacy_state(result.get("ct_legacy_match"))
+    ct_full_state = _format_ct_full_state(
+        result.get("ct_full_template_match"),
+        result.get("ct_full_template_material_match"),
+    )
+    return f"ct_vs_legacy({ct_legacy_state}) ct_vs_full({ct_full_state})"
+
+
 def _format_location(location: dict[str, Any] | None) -> str:
     if not location:
         return "?:?"
@@ -1537,9 +1547,7 @@ def _run_all(args) -> list[dict[str, Any]]:
                     "model": model,
                     "trajectory": trajectory.name,
                     "loop_type": (
-                        "single_turn_agent_loop"
-                        if isinstance(trajectory, SingleTurnTrajectory)
-                        else "tool_agent_loop"
+                        "single_turn_agent_loop" if isinstance(trajectory, SingleTurnTrajectory) else "tool_agent_loop"
                     ),
                     "requested_tool_parser": args.tool_parser if isinstance(trajectory, ToolAgentTrajectory) else None,
                     "tool_parser": tool_parser if isinstance(trajectory, ToolAgentTrajectory) else None,
@@ -1552,9 +1560,7 @@ def _run_all(args) -> list[dict[str, Any]]:
                 }
                 results.append(result)
                 print(
-                    f"  ERROR {result['error_type']}: {result['error']} "
-                    f"ct_vs_legacy({_format_ct_legacy_state(result.get('ct_legacy_match'))}) "
-                    f"ct_vs_full({_format_ct_full_state(result.get('ct_full_template_match'), result.get('ct_full_template_material_match'))})",
+                    f"  ERROR {result['error_type']}: {result['error']} {_format_result_match_state(result)}",
                     flush=True,
                 )
                 _print_error_details(result)
@@ -1576,18 +1582,14 @@ def _run_all(args) -> list[dict[str, Any]]:
             status = result["status"]
             if status == "pass":
                 print(
-                    "  PASS "
-                    f"ct_vs_legacy({_format_ct_legacy_state(result.get('ct_legacy_match'))}) "
-                    f"ct_vs_full({_format_ct_full_state(result.get('ct_full_template_match'), result.get('ct_full_template_material_match'))})",
+                    f"  PASS {_format_result_match_state(result)}",
                     flush=True,
                 )
                 _print_ct_full_template_details(result)
             elif status == "mismatch":
                 comparisons = result["comparisons"]
                 print(
-                    "  MISMATCH "
-                    f"ct_vs_legacy({_format_ct_legacy_state(result.get('ct_legacy_match'))}) "
-                    f"ct_vs_full({_format_ct_full_state(result.get('ct_full_template_match'), result.get('ct_full_template_material_match'))}) "
+                    f"  MISMATCH {_format_result_match_state(result)} "
                     f"prompt={comparisons['prompt_ids']['equal']} "
                     f"response={comparisons['response_ids']['equal']} "
                     f"mask={comparisons['loss_mask']['equal']} "
@@ -1598,9 +1600,7 @@ def _run_all(args) -> list[dict[str, Any]]:
                 _print_mismatch_details(result)
             else:
                 print(
-                    f"  ERROR {result.get('error_type')}: {result.get('error')} "
-                    f"ct_vs_legacy({_format_ct_legacy_state(result.get('ct_legacy_match'))}) "
-                    f"ct_vs_full({_format_ct_full_state(result.get('ct_full_template_match'), result.get('ct_full_template_material_match'))})",
+                    f"  ERROR {result.get('error_type')}: {result.get('error')} {_format_result_match_state(result)}",
                     flush=True,
                 )
                 _print_error_details(result)
@@ -1669,8 +1669,7 @@ def _print_summary(results: list[dict[str, Any]]) -> None:
     ct_legacy_error_count = sum(item.get("status") == "error" for item in results)
     ct_legacy_match_count = sum(item.get("ct_legacy_match") is True for item in results)
     ct_legacy_mismatch_count = sum(
-        item.get("ct_legacy_match") is False and item.get("status") != "error"
-        for item in results
+        item.get("ct_legacy_match") is False and item.get("status") != "error" for item in results
     )
 
     ct_full_error_count = sum(
