@@ -309,8 +309,10 @@ class ToolAgentLoop(AgentLoopBase):
         previous_messages = list(agent_data.messages)
 
         tasks = []
+        tool_call_names = []
         for tool_call in agent_data.tool_calls[: self.max_parallel_calls]:
             tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs, agent_data))
+            tool_call_names.append(tool_call.name)
 
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
@@ -339,7 +341,7 @@ class ToolAgentLoop(AgentLoopBase):
             else:
                 # Text-only content
                 message = {"role": "tool", "content": tool_response.text or ""}
-            message["name"] = tool_call.name
+            message["name"] = tool_call_names[tool_index]
             if tool_call.tool_call_id is not None:
                 message["tool_call_id"] = tool_call.tool_call_id
 
@@ -391,7 +393,7 @@ class ToolAgentLoop(AgentLoopBase):
             return AgentState.GENERATING
         elif self.tool_parser_name == "gpt-oss":
             logger.info("manually format tool responses for gpt-oss")
-            tool_response_text = build_gpt_oss_tool_response_text(add_messages)
+            tool_response_text = build_gpt_oss_tool_response_text(add_messages, tool_call_names)
             response_ids = await self.loop.run_in_executor(
                 None, lambda: self.tokenizer.encode(tool_response_text, add_special_tokens=False)
             )
@@ -400,11 +402,11 @@ class ToolAgentLoop(AgentLoopBase):
             # assistant tool_call message. Manually format the response tokens.
             # Format: <|tool_response>response:func_name{value:<|"|>content<|"|>}<tool_response|>
             parts = []
-            for msg in add_messages:
+            for msg, name in zip(add_messages, tool_call_names, strict=True):
                 content = msg.get("content", "")
                 if isinstance(content, list):
                     content = "".join([item.get("text", "") for item in content if item.get("type") == "text"])
-                parts.append(f'<|tool_response>response:{msg["name"]}{{value:<|"|>{content}<|"|>}}<tool_response|>')
+                parts.append(f'<|tool_response>response:{name}{{value:<|"|>{content}<|"|>}}<tool_response|>')
             tool_response_text = "".join(parts)
             response_ids = await self.loop.run_in_executor(
                 None, lambda: self.tokenizer.encode(tool_response_text, add_special_tokens=False)
