@@ -101,7 +101,9 @@ class ContinuousTokenBuilder:
                 raise ValueError(f"Unsupported Continuous Token append role: {role!r}")
             processed_messages.extend(group)
 
-        incremental_ids.extend(self.render_delta_token_id(updated_messages, [], add_generation_prompt=True, tools=tools))
+        incremental_ids.extend(
+            self.render_delta_token_id(updated_messages, [], add_generation_prompt=True, tools=tools)
+        )
         return incremental_ids
 
     def merge_tokens(
@@ -254,7 +256,12 @@ class ContinuousTokenBuilder:
             if tool_message.get("tool_call_id") is not None:
                 tool_call["id"] = tool_message["tool_call_id"]
             tool_calls.append(tool_call)
-        return {"role": "assistant", "content": "", "reasoning_content": _ASSISTANT_REASONING_CONTENT, "tool_calls": tool_calls}
+        return {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": _ASSISTANT_REASONING_CONTENT,
+            "tool_calls": tool_calls,
+        }
 
 
 class GptOssContinuousTokenBuilder(ContinuousTokenBuilder):
