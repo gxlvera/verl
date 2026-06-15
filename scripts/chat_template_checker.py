@@ -18,7 +18,8 @@ The checker runs the mock trajectories in
 ``tests.experimental.agent_loop.continuous_token.mock_trajectories`` through two
 layers:
 
-1. raw template prefix checks at text level. This is a quick checker that indicate if your chat template has append-only attribute;
+1. raw template prefix checks at text level. This is a quick checker that
+   indicates whether your chat template has the append-only attribute;
 2. production-shaped Continuous Token builder checks at token level. This layer
    verifies whether incrementally merging each turn with Continuous Token
    logic matches applying the chat template once to the full message list.
@@ -60,7 +61,6 @@ from verl.utils.continuous_token_wiring import (  # noqa: E402
     resolve_continuous_token_model_family,
 )
 from verl.utils.tokenizer import normalize_token_ids  # noqa: E402
-
 
 CheckLayer = Literal["raw-template", "continuous-token"]
 
@@ -194,9 +194,8 @@ def _tokenizer_name(tokenizer) -> str:
 def _is_glm_tokenizer(tokenizer) -> bool:
     tokenizer_name = _tokenizer_name(tokenizer).lower()
     compact_name = "".join(char for char in tokenizer_name if char.isalnum())
-    return (
-        any(marker in tokenizer_name for marker in ("glm-4.7", "glm_4.7", "glm-5", "glm_5"))
-        or any(marker in compact_name for marker in ("glm47", "glm5"))
+    return any(marker in tokenizer_name for marker in ("glm-4.7", "glm_4.7", "glm-5", "glm_5")) or any(
+        marker in compact_name for marker in ("glm47", "glm5")
     )
 
 
@@ -206,7 +205,7 @@ def _tokenizer_eos_token_ids(tokenizer) -> set[int]:
         return set()
     if isinstance(eos_token_id, int):
         return {eos_token_id}
-    if isinstance(eos_token_id, (list, tuple, set)):
+    if isinstance(eos_token_id, list | tuple | set):
         return {int(token_id) for token_id in eos_token_id if token_id is not None}
     raise TypeError(f"Unsupported eos_token_id type: {type(eos_token_id)!r}")
 
@@ -556,7 +555,7 @@ def parse_args() -> argparse.Namespace:
         type=json.loads,
         default=None,
         metavar="JSON",
-        help='Extra kwargs forwarded to apply_chat_template, e.g. \'{"enable_thinking": false}\'.',
+        help="Extra kwargs forwarded to apply_chat_template, e.g. '{\"enable_thinking\": false}'.",
     )
     parser.add_argument(
         "--allow-download",
