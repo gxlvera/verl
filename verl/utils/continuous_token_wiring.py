@@ -21,7 +21,9 @@ from typing import Any
 
 from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
+    Gemma4ContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
+    GptOssContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
 )
@@ -40,6 +42,8 @@ _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[str, type[Any]] = {
     "minimaxm27": MiniMaxContinuousTokenBuilder,
     "glm47": GLMContinuousTokenBuilder,
     "glm5": GLMContinuousTokenBuilder,
+    "gemma4": Gemma4ContinuousTokenBuilder,
+    "gptoss": GptOssContinuousTokenBuilder,
 }
 
 CONTINUOUS_TOKEN_BUILDER_FAMILIES = tuple(_CONTINUOUS_TOKEN_BUILDER_REGISTRY)
@@ -106,6 +110,12 @@ def infer_continuous_token_model_family(
         return "glm5"
     if any(marker in haystack for marker in ("glm-4.7", "glm_4.7", "glm4.7")) or "glm47" in compact:
         return "glm47"
+    if any(marker in haystack for marker in ("gemma-4", "gemma_4")) or any(
+        marker in compact for marker in ("gemma4", "gemma4unified")
+    ):
+        return "gemma4"
+    if any(marker in haystack for marker in ("gpt-oss", "gpt_oss")) or "gptoss" in compact:
+        return "gptoss"
     if "minimaxm27" in compact:
         return "minimaxm27"
     if "minimaxm25" in compact:

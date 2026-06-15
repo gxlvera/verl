@@ -233,7 +233,7 @@ multi_turn:
     enable: False
 
     # Model-family specific boundary handling. auto infers from model path/tokenizer name.
-    # Options: auto, default, qwen, qwen25, qwen3, qwen35, minimax, minimaxm2, minimaxm25, minimaxm27, glm47, glm5
+    # Options: auto, default, qwen, qwen25, qwen3, qwen35, minimax, minimaxm2, minimaxm25, minimaxm27, glm47, glm5, gemma4, gptoss
     model_family: auto
 
   # Format of the multi-turn rollout. Options: hermes, llama3_json, ...
