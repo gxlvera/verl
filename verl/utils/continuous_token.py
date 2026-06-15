@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -81,16 +82,24 @@ class ContinuousTokenBuilder:
         self._assert_append_only(previous_messages, updated_messages)
         appended_messages = updated_messages[len(previous_messages) :]
         incremental_ids: list[int] = []
+        processed_messages: list[dict[str, Any]] = []
 
         for group in self._iter_append_groups(appended_messages):
             role = group[0].get("role")
             if role == "tool":
-                incremental_ids.extend(self._tokenize_tool_group(group, tools=tools))
+                incremental_ids.extend(
+                    self._tokenize_tool_group(
+                        group,
+                        context_messages=previous_messages + processed_messages,
+                        tools=tools,
+                    )
+                )
             elif role in {"user", "system"}:
                 # System appends can represent retry/control messages; unsupported templates will fail in suffix diff.
                 incremental_ids.extend(self._tokenize_single_non_tool(group[0], tools=tools))
             else:
                 raise ValueError(f"Unsupported Continuous Token append role: {role!r}")
+            processed_messages.extend(group)
 
         incremental_ids.extend(self.render_delta_token_id(updated_messages, [], add_generation_prompt=True, tools=tools))
         return incremental_ids
@@ -172,9 +181,10 @@ class ContinuousTokenBuilder:
         self,
         tool_messages: list[dict[str, Any]],
         *,
+        context_messages: list[dict[str, Any]] | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
-        synthetic_assistant = self._synthetic_assistant_for_tools(tool_messages)
+        synthetic_assistant = self._synthetic_assistant_for_tools(tool_messages, context_messages=context_messages)
         return self.render_delta_token_id(
             [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE, synthetic_assistant],
             tool_messages,
@@ -225,13 +235,19 @@ class ContinuousTokenBuilder:
                     f"Continuous Token only supports appending roles {sorted(self.allowed_append_roles)}, got {role!r}"
                 )
 
-    def _synthetic_assistant_for_tools(self, tool_messages: list[dict[str, Any]]) -> dict[str, Any]:
+    def _synthetic_assistant_for_tools(
+        self,
+        tool_messages: list[dict[str, Any]],
+        *,
+        context_messages: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        tool_names_by_id, positional_tool_names = _assistant_tool_call_names(context_messages or [])
         tool_calls = []
-        for tool_message in tool_messages:
+        for index, tool_message in enumerate(tool_messages):
             tool_call = {
                 "type": "function",
                 "function": {
-                    "name": tool_message.get("name") or "continuous_token_tool",
+                    "name": _resolve_tool_name(tool_message, index, tool_names_by_id, positional_tool_names),
                     "arguments": {},
                 },
             }
@@ -239,6 +255,33 @@ class ContinuousTokenBuilder:
                 tool_call["id"] = tool_message["tool_call_id"]
             tool_calls.append(tool_call)
         return {"role": "assistant", "content": "", "reasoning_content": _ASSISTANT_REASONING_CONTENT, "tool_calls": tool_calls}
+
+
+class GptOssContinuousTokenBuilder(ContinuousTokenBuilder):
+    """GPT-OSS tool-response formatting."""
+
+    def _tokenize_tool_group(
+        self,
+        tool_messages: list[dict[str, Any]],
+        *,
+        context_messages: list[dict[str, Any]] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[int]:
+        del tools
+        tool_names_by_id, positional_tool_names = _assistant_tool_call_names(context_messages or [])
+        response_text = "".join(
+            self._format_tool_response(
+                tool_message,
+                _resolve_tool_name(tool_message, index, tool_names_by_id, positional_tool_names),
+            )
+            for index, tool_message in enumerate(tool_messages)
+        )
+        return self.tokenizer.encode(response_text, add_special_tokens=False)
+
+    @staticmethod
+    def _format_tool_response(tool_message: dict[str, Any], tool_name: str) -> str:
+        content = json.dumps(_stringify_tool_content(tool_message.get("content", "")), ensure_ascii=False)
+        return f"<|start|>functions.{tool_name} to=assistant<|channel|>commentary<|message|>{content}<|end|>"
 
 
 class QwenContinuousTokenBuilder(ContinuousTokenBuilder):
@@ -329,6 +372,38 @@ class GLMContinuousTokenBuilder(ContinuousTokenBuilder):
         )
 
 
+class Gemma4ContinuousTokenBuilder(ContinuousTokenBuilder):
+    """Gemma4 tool-response boundary handling."""
+
+    def __init__(self, tokenizer: Any, **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        self._tool_response_id = _require_token_id(tokenizer, "<|tool_response>")
+
+    def merge_tokens(
+        self,
+        previous_messages: list[dict[str, Any]],
+        updated_messages: list[dict[str, Any]],
+        runtime_token_ids: list[int],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> MergeResult:
+        appended_token_ids = self.tokenize_incremental_messages(previous_messages, updated_messages, tools=tools)
+        appended_messages = updated_messages[len(previous_messages) :]
+
+        prefix = list(runtime_token_ids)
+        inserted_token_ids: list[int] = []
+        if appended_messages and prefix[-1:] != [self._tool_response_id]:
+            prefix.append(self._tool_response_id)
+            inserted_token_ids.append(self._tool_response_id)
+
+        return MergeResult(
+            token_ids=prefix + appended_token_ids,
+            appended_token_count=len(appended_token_ids),
+            kind="non_assistant",
+            inserted_token_ids=inserted_token_ids,
+        )
+
+
 def _require_token_id(tokenizer: Any, token: str) -> int:
     token_id = tokenizer.convert_tokens_to_ids(token)
     if token_id is None:
@@ -340,3 +415,65 @@ def _require_token_id(tokenizer: Any, token: str) -> int:
     if not isinstance(token_id, int) or token_id < 0:
         raise ValueError(f"Tokenizer returned invalid id for required token {token!r}: {token_id!r}")
     return token_id
+
+
+def _stringify_tool_content(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            item.get("text", "") for item in content if isinstance(item, dict) and item.get("type") == "text"
+        )
+    return str(content)
+
+
+def _assistant_tool_call_names(
+    messages: list[dict[str, Any]],
+) -> tuple[dict[str, str], list[str]]:
+    tool_names_by_id: dict[str, str] = {}
+    positional_tool_names: list[str] = []
+    for message in reversed(messages):
+        if message.get("role") != "assistant":
+            continue
+        tool_calls = message.get("tool_calls") or []
+        if not isinstance(tool_calls, list):
+            continue
+        names: list[str] = []
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                continue
+            name = _tool_call_function_name(tool_call)
+            if name is None:
+                continue
+            names.append(name)
+            tool_call_id = tool_call.get("id")
+            if tool_call_id is not None:
+                tool_names_by_id.setdefault(str(tool_call_id), name)
+        if names and not positional_tool_names:
+            positional_tool_names = names
+    return tool_names_by_id, positional_tool_names
+
+
+def _resolve_tool_name(
+    tool_message: dict[str, Any],
+    index: int,
+    tool_names_by_id: dict[str, str],
+    positional_tool_names: list[str],
+) -> str:
+    tool_call_id = tool_message.get("tool_call_id")
+    if tool_call_id is not None and str(tool_call_id) in tool_names_by_id:
+        return tool_names_by_id[str(tool_call_id)]
+    if index < len(positional_tool_names):
+        return positional_tool_names[index]
+    if tool_message.get("name"):
+        return str(tool_message["name"])
+    return "continuous_token_tool"
+
+
+def _tool_call_function_name(tool_call: dict[str, Any]) -> str | None:
+    function = tool_call.get("function")
+    if isinstance(function, dict) and function.get("name") is not None:
+        return str(function["name"])
+    return None
