@@ -341,7 +341,6 @@ class ToolAgentLoop(AgentLoopBase):
             else:
                 # Text-only content
                 message = {"role": "tool", "content": tool_response.text or ""}
-            message["name"] = tool_call_names[tool_index]
             if tool_call.tool_call_id is not None:
                 message["tool_call_id"] = tool_call.tool_call_id
 
