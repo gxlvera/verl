@@ -139,16 +139,6 @@ Legacy appends the next rendered turn directly after `<|im_end|>`, so it misses
 the newline boundary. CT restores that canonical newline. The inserted newline
 has `loss_mask=0` and `logprob=0.0`.
 
-The harness reports CT-vs-legacy as a strict token/metadata comparison, so a
-mismatch is simply a mismatch.
-
-```text
-CT vs legacy:
-match: 9 / 27
-mismatch: 18 / 27
-error: 0 / 27
-```
-
 ## GLM
 
 Models covered:
