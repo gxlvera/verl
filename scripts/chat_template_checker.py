@@ -15,7 +15,7 @@
 """Check chat-template append-only.
 
 The checker runs the mock trajectories in
-``tests.experimental.agent_loop.continuous_token.mock_trajectories`` through two
+``verl.utils.test_utils.mock_trajectories`` through two
 layers:
 
 1. raw template prefix checks at text level. This is a quick checker that
@@ -48,17 +48,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tests.experimental.agent_loop.continuous_token.mock_trajectories import (  # noqa: E402
-    TRAJECTORIES,
-    MockTrajectory,
-    SingleTurnTrajectory,
-    ToolAgentTrajectory,
-)
 from verl.utils.chat_template import apply_chat_template  # noqa: E402
 from verl.utils.continuous_token_wiring import (  # noqa: E402
     CONTINUOUS_TOKEN_MODEL_FAMILY_OPTIONS,
     create_continuous_token_builder,
     resolve_continuous_token_model_family,
+)
+from verl.utils.test_utils.mock_trajectories import (  # noqa: E402
+    TRAJECTORIES,
+    MockTrajectory,
+    SingleTurnTrajectory,
+    ToolAgentTrajectory,
 )
 from verl.utils.tokenizer import normalize_token_ids  # noqa: E402
 

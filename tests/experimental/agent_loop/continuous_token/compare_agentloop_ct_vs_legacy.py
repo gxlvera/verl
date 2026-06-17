@@ -56,18 +56,18 @@ from typing import Any
 from omegaconf import OmegaConf
 from transformers import AutoTokenizer
 
-from tests.experimental.agent_loop.continuous_token.mock_trajectories import (
+from verl.experimental.agent_loop.agent_loop import AgentLoopOutput, DictConfigWrap, ToolListWrap
+from verl.experimental.agent_loop.single_turn_agent_loop import SingleTurnAgentLoop
+from verl.experimental.agent_loop.tool_agent_loop import ToolAgentLoop
+from verl.tools.function_tool import FunctionTool
+from verl.utils.chat_template import apply_chat_template
+from verl.utils.test_utils.mock_trajectories import (
     TRAJECTORY_BY_NAME,
     MockTrajectory,
     SingleTurnTrajectory,
     ToolAgentTrajectory,
     get_trajectory,
 )
-from verl.experimental.agent_loop.agent_loop import AgentLoopOutput, DictConfigWrap, ToolListWrap
-from verl.experimental.agent_loop.single_turn_agent_loop import SingleTurnAgentLoop
-from verl.experimental.agent_loop.tool_agent_loop import ToolAgentLoop
-from verl.tools.function_tool import FunctionTool
-from verl.utils.chat_template import apply_chat_template
 from verl.utils.tokenizer import normalize_token_ids
 from verl.workers.rollout.replica import TokenOutput
 
