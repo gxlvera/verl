@@ -101,7 +101,8 @@ def add_generation_prompt_for_gpt_oss(message_content: str) -> str:
 def build_gpt_oss_tool_response_text(messages: list[dict[str, Any]], tool_call_names: list[str]) -> str:
     """Build gpt-oss tool response text (manual formatting + generation prompt)."""
     tool_response_texts: list[str] = []
-    for index, tool_msg in enumerate(messages):
-        formatted = format_gpt_oss_tool_response_manually(tool_msg["content"], tool_call_names[index])
+    for i, tool_msg in enumerate(messages):
+        actual_tool_name = tool_call_names[i]
+        formatted = format_gpt_oss_tool_response_manually(tool_msg["content"], actual_tool_name)
         tool_response_texts.append(formatted)
     return add_generation_prompt_for_gpt_oss("".join(tool_response_texts))
