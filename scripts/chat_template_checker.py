@@ -34,6 +34,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sys
@@ -50,7 +51,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from verl.utils.chat_template import apply_chat_template  # noqa: E402
 from verl.utils.continuous_token_wiring import (  # noqa: E402
-    CONTINUOUS_TOKEN_MODEL_FAMILY_OPTIONS,
+    CONTINUOUS_TOKEN_BUILDER_FAMILIES,
     create_continuous_token_builder,
     resolve_continuous_token_model_family,
 )
@@ -402,13 +403,14 @@ def run_continuous_token_checks(
     results: list[CheckResult] = []
     tools = _tools_for(trajectory)
     try:
+        if custom_builder_module:
+            importlib.import_module(custom_builder_module)
         builder = create_continuous_token_builder(
             tokenizer,
             model_family=model_family,
             model_path=model,
             tokenizer_name_or_path=model,
             chat_template_kwargs=chat_template_kwargs,
-            custom_builder_module=custom_builder_module,
         )
     except Exception as exc:
         return [
@@ -542,7 +544,7 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help=(
             "Continuous Token builder family. Default: auto. "
-            f"Built-ins: {', '.join(CONTINUOUS_TOKEN_MODEL_FAMILY_OPTIONS)}."
+            f"Built-ins: {', '.join(CONTINUOUS_TOKEN_BUILDER_FAMILIES)}."
         ),
     )
     parser.add_argument(
