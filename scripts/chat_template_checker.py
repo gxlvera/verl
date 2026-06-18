@@ -18,11 +18,27 @@ The checker runs the mock trajectories in
 ``verl.utils.test_utils.mock_trajectories`` through two
 layers:
 
-1. raw template prefix checks at text level. This is a quick checker that
-   indicates whether your chat template has the append-only attribute;
+1. raw template prefix diagnostics at token-id level. This is a quick checker that
+   indicates whether applying the raw chat template to a prefix produces token
+   IDs that remain a prefix after later messages are rendered.
+
+   Note: Failures in this diagnostic are warnings, not final verdict failures.
+   Continuous Token does not strictly require the model chat template to be
+   globally append-only. A raw diagnostic warning means users should check
+   whether non-assistant incremental messages are still append-only under the
+   builder's dummy context. The default dummy message construction in
+   ContinuousTokenBuilder is designed for this; for example, a non-empty
+   reasoning_content in synthetic assistant messages can make Qwen3-style
+   templates append-only for the incremental non-assistant extraction step even
+   when the original full conversation template is not globally append-only.
+
 2. production-shaped Continuous Token builder checks at token level. This layer
-   verifies whether incrementally merging each turn with Continuous Token
-   logic matches applying the chat template once to the full message list.
+   incrementally rebuilds the runtime token stream turn by turn with Continuous
+   Token logic, then compares the final assembled runtime IDs with directly
+   applying the chat template to the complete message list with tokenization.
+   If the final message is an assistant output, the full render is trimmed to
+   the runtime stop shape after the final EOS/stop token. Its main purpose is
+   to verify the builder's merge-boundary handling.
 
 Examples:
 
@@ -114,27 +130,6 @@ def _assistant_message_for_single_turn(trajectory: SingleTurnTrajectory) -> dict
     return {"role": "assistant", "content": trajectory.assistant_response}
 
 
-def _render_text(
-    tokenizer,
-    messages: list[dict[str, Any]],
-    *,
-    tools: list[dict[str, Any]] | None,
-    add_generation_prompt: bool,
-    chat_template_kwargs: dict[str, Any],
-) -> str:
-    rendered = apply_chat_template(
-        tokenizer,
-        _clone(messages),
-        tokenize=False,
-        add_generation_prompt=add_generation_prompt,
-        tools=_clone(tools),
-        **chat_template_kwargs,
-    )
-    if not isinstance(rendered, str):
-        raise TypeError(f"Expected chat template text render to return str, got {type(rendered)!r}")
-    return rendered
-
-
 def _render_tokens(
     tokenizer,
     messages: list[dict[str, Any]],
@@ -154,17 +149,17 @@ def _render_tokens(
     return normalize_token_ids(tokenized)
 
 
-def _text_prefix_error(prefix_text: str, full_text: str) -> str | None:
-    if full_text.startswith(prefix_text):
+def _token_prefix_error(prefix_ids: list[int], full_ids: list[int]) -> str | None:
+    if full_ids[: len(prefix_ids)] == prefix_ids:
         return None
-    limit = min(len(prefix_text), len(full_text))
-    mismatch = next((idx for idx in range(limit) if prefix_text[idx] != full_text[idx]), limit)
-    ctx_start = max(0, mismatch - 80)
-    ctx_end = mismatch + 80
+    limit = min(len(prefix_ids), len(full_ids))
+    mismatch = next((idx for idx in range(limit) if prefix_ids[idx] != full_ids[idx]), limit)
+    prefix_value = prefix_ids[mismatch] if mismatch < len(prefix_ids) else None
+    full_value = full_ids[mismatch] if mismatch < len(full_ids) else None
     return (
-        f"Prefix mismatch at char {mismatch}: "
-        f"prefix={prefix_text[ctx_start:ctx_end]!r}, "
-        f"full={full_text[ctx_start:ctx_end]!r}"
+        f"Token prefix mismatch at index {mismatch}: "
+        f"prefix_len={len(prefix_ids)}, full_len={len(full_ids)}, "
+        f"prefix={prefix_value}, full={full_value}"
     )
 
 
@@ -302,21 +297,21 @@ def _record_raw_prefix_check(
     chat_template_kwargs: dict[str, Any],
 ) -> None:
     try:
-        prefix_text = _render_text(
+        prefix_ids = _render_tokens(
             tokenizer,
             prefix_messages,
             tools=tools,
             add_generation_prompt=prefix_add_generation_prompt,
             chat_template_kwargs=chat_template_kwargs,
         )
-        full_text = _render_text(
+        full_ids = _render_tokens(
             tokenizer,
             full_messages,
             tools=tools,
             add_generation_prompt=full_add_generation_prompt,
             chat_template_kwargs=chat_template_kwargs,
         )
-        error = _text_prefix_error(prefix_text, full_text)
+        error = _token_prefix_error(prefix_ids, full_ids)
         results.append(CheckResult("raw-template", case_name, error is None, error))
     except Exception as exc:
         results.append(CheckResult("raw-template", case_name, False, f"{type(exc).__name__}: {exc}"))
@@ -328,6 +323,16 @@ def run_raw_template_checks(
     *,
     chat_template_kwargs: dict[str, Any],
 ) -> list[CheckResult]:
+    """Run direct chat-template prefix diagnostics without Continuous Token logic.
+
+    Each case renders the trajectory boundary twice with ``tokenize=True``:
+    first as the current prefix, then as the later full message list. The check
+    passes only when the prefix token IDs are exactly a prefix of the full token
+    IDs. This is a raw append-only smoke test for the template itself. Failures
+    are diagnostic because this does not exercise the builder's dummy contexts
+    or boundary merge patches.
+    """
+
     results: list[CheckResult] = []
     tools = _tools_for(trajectory)
     messages = _initial_messages(trajectory)
@@ -400,6 +405,19 @@ def run_continuous_token_checks(
     custom_builder_module: str | None,
     chat_template_kwargs: dict[str, Any],
 ) -> list[CheckResult]:
+    """Run an end-to-end Continuous Token reconstruction check.
+
+    The checker builds the runtime token stream the same way production would:
+    create the initial prompt, append each assistant output suffix, and merge
+    each appended non-assistant turn through the selected builder. It performs a
+    single final assertion per trajectory: the fully assembled runtime token IDs
+    must match directly applying the chat template to the complete final message
+    list with ``tokenize=True``. When the final message is an assistant output,
+    the full render is normalized to the runtime stop shape by trimming template
+    tokens after the final EOS/stop token. This targets CT merge-boundary bugs
+    without treating intermediate prompt states as separate pass/fail cases.
+    """
+
     results: list[CheckResult] = []
     tools = _tools_for(trajectory)
     try:
@@ -422,29 +440,18 @@ def run_continuous_token_checks(
             )
         ]
 
+    case_name = f"{trajectory.name}.full_trajectory"
     messages = _initial_messages(trajectory)
     try:
         runtime_ids = builder.build_initial_tokens(messages, tools=tools)
-        expected_initial_ids = _render_tokens(
-            tokenizer,
-            messages,
-            tools=tools,
-            add_generation_prompt=True,
-            chat_template_kwargs=chat_template_kwargs,
-        )
-        _append_ct_result(
-            results,
-            case_name=f"{trajectory.name}.initial_prompt",
-            expected_ids=expected_initial_ids,
-            actual_ids=runtime_ids,
-        )
+        final_messages = messages
     except Exception as exc:
         results.append(
             CheckResult(
                 "continuous-token",
-                f"{trajectory.name}.initial_prompt",
+                case_name,
                 False,
-                f"{type(exc).__name__}: {exc}",
+                f"initial_prompt: {type(exc).__name__}: {exc}",
             )
         )
         return results
@@ -468,19 +475,19 @@ def run_continuous_token_checks(
             )
             merge_result = builder.append_assistant_tokens(runtime_ids, assistant_ids)
             runtime_ids = merge_result.token_ids
-            results.append(CheckResult("continuous-token", f"{trajectory.name}.assistant_turn{turn_index}", True))
         except Exception as exc:
             results.append(
                 CheckResult(
                     "continuous-token",
-                    f"{trajectory.name}.assistant_turn{turn_index}",
+                    case_name,
                     False,
-                    f"{type(exc).__name__}: {exc}",
+                    f"assistant_turn{turn_index}: {type(exc).__name__}: {exc}",
                 )
             )
             return results
 
         messages_with_assistant = messages + [assistant]
+        final_messages = messages_with_assistant
         appended_messages = list(appended)
         if appended_messages:
             roles = "_".join(message.get("role", "unknown") for message in appended_messages)
@@ -488,39 +495,58 @@ def run_continuous_token_checks(
             try:
                 merge_result = builder.merge_tokens(messages_with_assistant, next_messages, runtime_ids, tools=tools)
                 runtime_ids = merge_result.token_ids
-                expected_next_ids = _render_tokens(
-                    tokenizer,
-                    next_messages,
-                    tools=tools,
-                    add_generation_prompt=True,
-                    chat_template_kwargs=chat_template_kwargs,
-                )
-                _append_ct_result(
-                    results,
-                    case_name=f"{trajectory.name}.append_turn{turn_index}.{roles}",
-                    expected_ids=expected_next_ids,
-                    actual_ids=runtime_ids,
-                )
             except Exception as exc:
                 results.append(
                     CheckResult(
                         "continuous-token",
-                        f"{trajectory.name}.append_turn{turn_index}.{roles}",
+                        case_name,
                         False,
-                        f"{type(exc).__name__}: {exc}",
+                        f"append_turn{turn_index}.{roles}: {type(exc).__name__}: {exc}",
                     )
                 )
                 return results
+            final_messages = next_messages
         messages = messages_with_assistant + appended_messages
+
+    try:
+        final_is_assistant = final_messages and final_messages[-1].get("role") == "assistant"
+        expected_final_ids = _render_tokens(
+            tokenizer,
+            final_messages,
+            tools=tools,
+            add_generation_prompt=not final_is_assistant,
+            chat_template_kwargs=chat_template_kwargs,
+        )
+        if final_is_assistant:
+            expected_final_ids = _truncate_after_final_eos(
+                tokenizer,
+                expected_final_ids,
+                assistant_message=final_messages[-1],
+            )
+        _append_ct_result(
+            results,
+            case_name=case_name,
+            expected_ids=expected_final_ids,
+            actual_ids=runtime_ids,
+        )
+    except Exception as exc:
+        results.append(
+            CheckResult(
+                "continuous-token",
+                case_name,
+                False,
+                f"final_full_render: {type(exc).__name__}: {exc}",
+            )
+        )
 
     return results
 
 
-def _print_results(title: str, results: list[CheckResult]) -> None:
+def _print_results(title: str, results: list[CheckResult], *, failed_status: str = "FAIL") -> None:
     print(title)
     max_name_len = max((len(result.case_name) for result in results), default=0)
     for result in results:
-        status = "PASS" if result.passed else "FAIL"
+        status = "PASS" if result.passed else failed_status
         line = f"  [{status}] {result.case_name:<{max_name_len}}"
         if result.error:
             first_line = result.error.splitlines()[0]
@@ -615,18 +641,29 @@ def main() -> int:
             )
         )
 
-    _print_results("Raw template prefix checks:", raw_results)
+    _print_results("Raw template prefix diagnostics:", raw_results, failed_status="WARN")
     _print_results("Continuous Token checks:", ct_results)
 
-    passed = sum(result.passed for result in raw_results + ct_results)
-    total = len(raw_results) + len(ct_results)
-    failed = total - passed
-    print(f"Results: {passed}/{total} passed, {failed} failed")
-    if failed:
-        print("Verdict: FAIL - chat template is not Continuous Token safe for these trajectories")
+    raw_passed = sum(result.passed for result in raw_results)
+    raw_failed = len(raw_results) - raw_passed
+    ct_passed = sum(result.passed for result in ct_results)
+    ct_failed = len(ct_results) - ct_passed
+    print(
+        "Results: "
+        f"raw diagnostics {raw_passed}/{len(raw_results)} passed ({raw_failed} warnings), "
+        f"Continuous Token {ct_passed}/{len(ct_results)} passed"
+    )
+    if ct_failed:
+        print("Verdict: FAIL - Continuous Token builder is not safe for these trajectories")
         return 1
+    if raw_failed:
+        print(
+            "Verdict: PASS with raw-prefix warnings - raw template is not globally append-only, "
+            "but Continuous Token checks passed"
+        )
+        return 0
 
-    print("Verdict: PASS - chat template passed raw prefix and Continuous Token checks")
+    print("Verdict: PASS - chat template passed raw prefix diagnostics and Continuous Token checks")
     return 0
 
 
