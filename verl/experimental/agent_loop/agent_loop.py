@@ -371,6 +371,19 @@ class AgentLoopBase(ABC):
     def _cap_text_prompt_length(self, prompt_ids: list[int]) -> list[int]:
         prompt_length = self.rollout_config.prompt_length
         if len(prompt_ids) > prompt_length:
+            # VL builders: skip truncation to avoid splitting vision token spans
+            if (
+                self.continuous_token_builder is not None
+                and hasattr(self.continuous_token_builder, "supports_multimodal")
+                and self.continuous_token_builder.supports_multimodal()
+            ):
+                logger.warning(
+                    "Prompt of %d tokens exceeds rollout.prompt_length=%d but truncation is "
+                    "skipped for multimodal builder to preserve vision token integrity.",
+                    len(prompt_ids),
+                    prompt_length,
+                )
+                return prompt_ids
             logger.warning(
                 "Prompt of %d tokens exceeds rollout.prompt_length=%d; left-truncating.",
                 len(prompt_ids),
