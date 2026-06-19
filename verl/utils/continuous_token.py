@@ -647,3 +647,319 @@ def _tool_call_function_name(tool_call: dict[str, Any]) -> str | None:
     if isinstance(function, dict) and function.get("name") is not None:
         return str(function["name"])
     return None
+
+
+# =============================================================================
+# New model-family text subclasses
+# =============================================================================
+
+
+class MiMoContinuousTokenBuilder(ContinuousTokenBuilder):
+    """Xiaomi MiMo ChatML boundary handling.
+
+    MiMo uses Qwen2Tokenizer with identical ChatML format. Behavior matches
+    QwenContinuousTokenBuilder (insert newline after <|im_end|>) but is kept
+    as an independent class for structural clarity and future divergence.
+    """
+
+    def __init__(self, tokenizer: Any, **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        newline_ids = tokenizer.encode("\n", add_special_tokens=False)
+        if len(newline_ids) != 1:
+            raise ValueError(f"Expected MiMo newline to tokenize to one token, got {newline_ids!r}")
+        self._newline_id = int(newline_ids[0])
+        self._im_end_id = _require_token_id(tokenizer, "<|im_end|>")
+
+    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+        prefix = list(runtime_token_ids)
+        inserted_token_ids: list[int] = []
+        if prefix and prefix[-1] == self._im_end_id:
+            prefix.append(self._newline_id)
+            inserted_token_ids.append(self._newline_id)
+        return MergeResult(
+            token_ids=prefix + list(appended_token_ids),
+            appended_token_count=len(appended_token_ids),
+            kind="non_assistant",
+            inserted_token_ids=inserted_token_ids,
+        )
+
+
+class DeepSeekContinuousTokenBuilder(ContinuousTokenBuilder):
+    """DeepSeek V3/R1 boundary handling.
+
+    DeepSeek uses direct concatenation at boundaries (no separator between
+    <|end_of_sentence|> and the next role marker). The subclass validates
+    the EOS token uses correct Unicode (fullwidth | U+FF5C and lower-eighth
+    block _ U+2581) to catch common encoding bugs early.
+    """
+
+    # DeepSeek special tokens use fullwidth vertical line and lower one-eighth block
+    _EOS_TOKEN = "<\uff5cend\u2581of\u2581sentence\uff5c>"
+
+    def __init__(self, tokenizer: Any, **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        self._eos_id = _require_token_id(tokenizer, self._EOS_TOKEN)
+
+    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+        # DeepSeek has no intervening token between EOS and next role marker.
+        # Direct concatenation is correct behavior.
+        merged_token_ids = list(runtime_token_ids) + list(appended_token_ids)
+        return MergeResult(
+            token_ids=merged_token_ids,
+            appended_token_count=len(appended_token_ids),
+            kind="non_assistant",
+        )
+
+
+class KimiContinuousTokenBuilder(ContinuousTokenBuilder):
+    """Kimi (Moonshot) three-part turn boundary handling.
+
+    Kimi uses a unique three-part turn structure:
+        <|im_{role}|>{role_text}<|im_middle|>{content}<|im_end|>
+    with no whitespace/newline between turns. When the runtime prefix ends
+    with <|im_end|>, no separator is inserted (unlike Qwen which needs \\n).
+    """
+
+    def __init__(self, tokenizer: Any, **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        self._im_end_id = _require_token_id(tokenizer, "<|im_end|>")
+
+    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+        # Kimi concatenates directly after <|im_end|> — no separator needed.
+        # The next turn's <|im_{role}|> token follows immediately.
+        merged_token_ids = list(runtime_token_ids) + list(appended_token_ids)
+        return MergeResult(
+            token_ids=merged_token_ids,
+            appended_token_count=len(appended_token_ids),
+            kind="non_assistant",
+        )
+
+
+class Nemotron4ContinuousTokenBuilder(ContinuousTokenBuilder):
+    """NVIDIA Nemotron-4 (extra_id style) boundary handling.
+
+    Nemotron-4 uses <extra_id_0> for system and <extra_id_1> for user/assistant/tool
+    role markers. There is no explicit end-of-turn token — turns are implicitly
+    bounded by the next role marker. Direct concatenation is correct.
+    """
+
+    def __init__(self, tokenizer: Any, **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        # Validate the role marker tokens exist
+        self._extra_id_0 = _require_token_id(tokenizer, "<extra_id_0>")
+        self._extra_id_1 = _require_token_id(tokenizer, "<extra_id_1>")
+
+    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+        # No end-of-turn delimiter in Nemotron-4; direct concatenation.
+        merged_token_ids = list(runtime_token_ids) + list(appended_token_ids)
+        return MergeResult(
+            token_ids=merged_token_ids,
+            appended_token_count=len(appended_token_ids),
+            kind="non_assistant",
+        )
+
+
+# =============================================================================
+# Multimodal (VL) subclasses — Phase 1
+# =============================================================================
+
+
+class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
+    """Qwen Vision-Language continuous token builder.
+
+    Handles Qwen2-VL, Qwen2.5-VL, Qwen3-VL, and Qwen3-VL-MoE. Inherits
+    the ChatML newline boundary patch from QwenContinuousTokenBuilder and
+    adds vision token handling (Tier 1 Wrapper pattern):
+        <|vision_start|> + N * <|image_pad|> + <|vision_end|>
+
+    The __init__ resolves model-variant differences (patch_size 14 vs 16,
+    spatial_merge_size source) via the processor/config.
+    """
+
+    def __init__(self, tokenizer: Any, processor: Any, *, model_type: str = "qwen2_5_vl", **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        self.processor = processor
+        self.model_type = model_type
+
+        # Vision special token IDs
+        self._vision_start_id = _require_token_id(tokenizer, "<|vision_start|>")
+        self._vision_end_id = _require_token_id(tokenizer, "<|vision_end|>")
+        self._image_pad_id = _require_token_id(tokenizer, "<|image_pad|>")
+
+        # Spatial merge size — determines how many pad tokens per image
+        if hasattr(processor, "image_processor") and hasattr(processor.image_processor, "merge_size"):
+            self._spatial_merge_size = int(processor.image_processor.merge_size)
+        else:
+            # Fallback: try model config
+            self._spatial_merge_size = 2
+
+    @classmethod
+    def supports_multimodal(cls) -> bool:
+        return True
+
+    def count_vision_tokens(self, image_grid_thw_row: tuple[int, int, int]) -> int:
+        """Compute image_pad count: t * (h // merge) * (w // merge)."""
+        t, h, w = image_grid_thw_row
+        merge = self._spatial_merge_size
+        return t * (h // merge) * (w // merge)
+
+    def extract_vision_placeholders(self, token_ids: Sequence[int]) -> list[tuple[int, int]]:
+        """Find all <|vision_start|>...<|vision_end|> spans in token sequence."""
+        spans: list[tuple[int, int]] = []
+        i = 0
+        n = len(token_ids)
+        while i < n:
+            if token_ids[i] == self._vision_start_id:
+                # Find matching vision_end
+                j = i + 1
+                while j < n and token_ids[j] != self._vision_end_id:
+                    j += 1
+                if j < n:
+                    # Span covers the image_pad tokens (exclusive of start/end markers)
+                    spans.append((i + 1, j))
+                i = j + 1
+            else:
+                i += 1
+        return spans
+
+    def render_tokens_with_mm(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any],
+        *,
+        add_generation_prompt: bool = True,
+        mm_processor_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[list[int], dict[str, Any]]:
+        """Render messages through the Qwen VL processor."""
+        from verl.utils.chat_template import apply_chat_template
+        from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
+
+        # Step 1: Render text template (with single image_pad placeholders)
+        text = apply_chat_template(
+            self.tokenizer,
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            **self.chat_template_kwargs,
+        )
+
+        # Step 2: Run through processor to expand image_pad and get pixel_values
+        proc_kwargs = dict(mm_processor_kwargs or {})
+        processor_output = build_multimodal_processor_inputs(
+            self.processor,
+            text=text,
+            images=images if images else None,
+            mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
+        )
+
+        # Step 3: Extract token_ids and mm_extras
+        token_ids = normalize_token_ids(processor_output["input_ids"])
+
+        mm_extras: dict[str, Any] = {}
+        if "pixel_values" in processor_output:
+            mm_extras["pixel_values"] = processor_output["pixel_values"]
+        if "image_grid_thw" in processor_output:
+            # Convert tensor to list of tuples for MergeResult compatibility
+            grid_thw = processor_output["image_grid_thw"]
+            if hasattr(grid_thw, "tolist"):
+                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
+            else:
+                mm_extras["image_grid_thw"] = list(grid_thw)
+
+        return token_ids, mm_extras
+
+
+class MiMoVLContinuousTokenBuilder(MiMoContinuousTokenBuilder):
+    """Xiaomi MiMo-VL continuous token builder.
+
+    MiMo-VL uses Qwen2_5_VLForConditionalGeneration with identical vision
+    token structure. Inherits MiMo's ChatML boundary handling and adds
+    the same Tier 1 Wrapper vision logic as QwenVL.
+
+    Kept as independent class for structural clarity.
+    """
+
+    def __init__(self, tokenizer: Any, processor: Any, *, model_type: str = "mimo_vl", **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        self.processor = processor
+        self.model_type = model_type
+
+        # Vision special token IDs (same as Qwen)
+        self._vision_start_id = _require_token_id(tokenizer, "<|vision_start|>")
+        self._vision_end_id = _require_token_id(tokenizer, "<|vision_end|>")
+        self._image_pad_id = _require_token_id(tokenizer, "<|image_pad|>")
+
+        # Spatial merge size
+        if hasattr(processor, "image_processor") and hasattr(processor.image_processor, "merge_size"):
+            self._spatial_merge_size = int(processor.image_processor.merge_size)
+        else:
+            self._spatial_merge_size = 2
+
+    @classmethod
+    def supports_multimodal(cls) -> bool:
+        return True
+
+    def count_vision_tokens(self, image_grid_thw_row: tuple[int, int, int]) -> int:
+        """Compute image_pad count: t * (h // merge) * (w // merge)."""
+        t, h, w = image_grid_thw_row
+        merge = self._spatial_merge_size
+        return t * (h // merge) * (w // merge)
+
+    def extract_vision_placeholders(self, token_ids: Sequence[int]) -> list[tuple[int, int]]:
+        """Find all <|vision_start|>...<|vision_end|> spans."""
+        spans: list[tuple[int, int]] = []
+        i = 0
+        n = len(token_ids)
+        while i < n:
+            if token_ids[i] == self._vision_start_id:
+                j = i + 1
+                while j < n and token_ids[j] != self._vision_end_id:
+                    j += 1
+                if j < n:
+                    spans.append((i + 1, j))
+                i = j + 1
+            else:
+                i += 1
+        return spans
+
+    def render_tokens_with_mm(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any],
+        *,
+        add_generation_prompt: bool = True,
+        mm_processor_kwargs: dict[str, Any] | None = None,
+    ) -> tuple[list[int], dict[str, Any]]:
+        """Render messages through the MiMo-VL processor (Qwen2.5-VL compatible)."""
+        from verl.utils.chat_template import apply_chat_template
+        from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
+
+        text = apply_chat_template(
+            self.tokenizer,
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            **self.chat_template_kwargs,
+        )
+
+        proc_kwargs = dict(mm_processor_kwargs or {})
+        processor_output = build_multimodal_processor_inputs(
+            self.processor,
+            text=text,
+            images=images if images else None,
+            mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
+        )
+
+        token_ids = normalize_token_ids(processor_output["input_ids"])
+
+        mm_extras: dict[str, Any] = {}
+        if "pixel_values" in processor_output:
+            mm_extras["pixel_values"] = processor_output["pixel_values"]
+        if "image_grid_thw" in processor_output:
+            grid_thw = processor_output["image_grid_thw"]
+            if hasattr(grid_thw, "tolist"):
+                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
+            else:
+                mm_extras["image_grid_thw"] = list(grid_thw)
+
+        return token_ids, mm_extras
