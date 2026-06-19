@@ -210,6 +210,11 @@ class ToolAgentLoop(AgentLoopBase):
         schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
         if self.enable_continuous_token:
             prompt_ids = await self.ct_build_initial_tokens(agent_data.messages, tools=schemas)
+            # For VL builders, retrieve multimodal extras computed during build
+            mm_extras = getattr(self.continuous_token_builder, "_last_mm_extras", None)
+            if mm_extras and mm_extras.get("pixel_values") is not None:
+                agent_data.multi_modal_data = agent_data.multi_modal_data or {}
+                agent_data.multi_modal_data["images"] = agent_data.image_data
         else:
             prompt_ids = await self.apply_chat_template(
                 agent_data.messages,

@@ -868,6 +868,146 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
 
         return token_ids, mm_extras
 
+    def _extract_images_from_messages(self, messages: list[dict[str, Any]]) -> list[Any]:
+        """Extract image references from message content blocks."""
+        images: list[Any] = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "image":
+                        image_ref = block.get("image") or block.get("image_url", {}).get("url")
+                        if image_ref is not None:
+                            images.append(image_ref)
+        return images
+
+    def build_initial_tokens(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[int]:
+        """Build initial tokens with multimodal processor support.
+
+        Stores mm_extras in self._last_mm_extras for caller retrieval.
+        Falls back to text-only rendering if no images are present.
+        """
+        images = self._extract_images_from_messages(messages)
+        if not images:
+            # No images — use text-only path (inherited from base)
+            self._last_mm_extras: dict[str, Any] = {}
+            return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
+
+        token_ids, mm_extras = self.render_tokens_with_mm(
+            messages, images, add_generation_prompt=True
+        )
+        self._last_mm_extras = mm_extras
+        return token_ids
+
+    def merge_tokens(
+        self,
+        previous_messages: list[dict[str, Any]],
+        updated_messages: list[dict[str, Any]],
+        runtime_token_ids: list[int],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> MergeResult:
+        """Merge tokens with multimodal awareness.
+
+        If new images appear in the appended messages, re-renders the full
+        message list through the processor and slices out the delta mm_extras.
+        Otherwise falls back to text-only incremental merge.
+        """
+        self._assert_append_only(previous_messages, updated_messages)
+        appended_messages = updated_messages[len(previous_messages):]
+
+        new_images = self._extract_images_from_messages(appended_messages)
+        if not new_images:
+            # No new images — use text-only incremental merge (inherited)
+            appended_ids = self.tokenize_incremental_messages(
+                previous_messages, updated_messages, tools=tools
+            )
+            result = self._merge_token_ids(runtime_token_ids, appended_ids)
+            return result
+
+        # New images present — re-render full message list through processor
+        all_images = self._extract_images_from_messages(updated_messages)
+        prev_images = self._extract_images_from_messages(previous_messages)
+
+        full_token_ids, full_mm_extras = self.render_tokens_with_mm(
+            updated_messages, all_images, add_generation_prompt=True
+        )
+
+        # Slice mm_extras: only the delta (new images) portion
+        delta_mm_extras = self._slice_mm_delta(
+            prev_image_count=len(prev_images),
+            full_mm_extras=full_mm_extras,
+        )
+
+        # Compute appended tokens via prefix diff
+        prefix_len = len(runtime_token_ids)
+        appended_token_ids = full_token_ids[prefix_len:]
+
+        # Apply boundary handling (newline after im_end from QwenBuilder)
+        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+
+        # Populate MM fields in the result
+        image_token_spans = self.extract_vision_placeholders(merge_result.token_ids)
+
+        return MergeResult(
+            token_ids=merge_result.token_ids,
+            appended_token_count=merge_result.appended_token_count,
+            kind=merge_result.kind,
+            inserted_token_ids=merge_result.inserted_token_ids,
+            removed_prefix_token_count=merge_result.removed_prefix_token_count,
+            pixel_values=delta_mm_extras.get("pixel_values"),
+            image_grid_thw=delta_mm_extras.get("image_grid_thw", []),
+            image_token_spans=image_token_spans,
+            mm_processor_kwargs=delta_mm_extras.get("mm_processor_kwargs", {}),
+        )
+
+    def _slice_mm_delta(
+        self,
+        prev_image_count: int,
+        full_mm_extras: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Slice full mm_extras to only include new (delta) images.
+
+        Uses image_grid_thw length to determine image boundaries in pixel_values.
+        """
+        grid_thw = full_mm_extras.get("image_grid_thw", [])
+        pixel_values = full_mm_extras.get("pixel_values")
+
+        if prev_image_count == 0:
+            # All images are new
+            return full_mm_extras
+
+        if prev_image_count >= len(grid_thw):
+            # No new images in mm_extras (shouldn't happen if we got here)
+            return {}
+
+        # Slice grid_thw
+        delta_grid_thw = grid_thw[prev_image_count:]
+
+        # Slice pixel_values: each image contributes count_vision_tokens patches
+        if pixel_values is not None:
+            # Compute cumulative patch counts to find split point
+            prev_patch_count = sum(
+                self.count_vision_tokens(tuple(row)) for row in grid_thw[:prev_image_count]
+            )
+            if hasattr(pixel_values, "__getitem__"):
+                # Tensor-like slicing (numpy/torch)
+                delta_pixel_values = pixel_values[prev_patch_count:]
+            else:
+                delta_pixel_values = pixel_values
+        else:
+            delta_pixel_values = None
+
+        return {
+            "pixel_values": delta_pixel_values,
+            "image_grid_thw": delta_grid_thw,
+        }
+
 
 class MiMoVLContinuousTokenBuilder(MiMoContinuousTokenBuilder):
     """Xiaomi MiMo-VL continuous token builder.
@@ -963,3 +1103,114 @@ class MiMoVLContinuousTokenBuilder(MiMoContinuousTokenBuilder):
                 mm_extras["image_grid_thw"] = list(grid_thw)
 
         return token_ids, mm_extras
+
+    def _extract_images_from_messages(self, messages: list[dict[str, Any]]) -> list[Any]:
+        """Extract image references from message content blocks."""
+        images: list[Any] = []
+        for msg in messages:
+            content = msg.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "image":
+                        image_ref = block.get("image") or block.get("image_url", {}).get("url")
+                        if image_ref is not None:
+                            images.append(image_ref)
+        return images
+
+    def build_initial_tokens(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[int]:
+        """Build initial tokens with multimodal processor support."""
+        images = self._extract_images_from_messages(messages)
+        if not images:
+            self._last_mm_extras: dict[str, Any] = {}
+            return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
+
+        token_ids, mm_extras = self.render_tokens_with_mm(
+            messages, images, add_generation_prompt=True
+        )
+        self._last_mm_extras = mm_extras
+        return token_ids
+
+    def merge_tokens(
+        self,
+        previous_messages: list[dict[str, Any]],
+        updated_messages: list[dict[str, Any]],
+        runtime_token_ids: list[int],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> MergeResult:
+        """Merge tokens with multimodal awareness."""
+        self._assert_append_only(previous_messages, updated_messages)
+        appended_messages = updated_messages[len(previous_messages):]
+
+        new_images = self._extract_images_from_messages(appended_messages)
+        if not new_images:
+            appended_ids = self.tokenize_incremental_messages(
+                previous_messages, updated_messages, tools=tools
+            )
+            return self._merge_token_ids(runtime_token_ids, appended_ids)
+
+        all_images = self._extract_images_from_messages(updated_messages)
+        prev_images = self._extract_images_from_messages(previous_messages)
+
+        full_token_ids, full_mm_extras = self.render_tokens_with_mm(
+            updated_messages, all_images, add_generation_prompt=True
+        )
+
+        delta_mm_extras = self._slice_mm_delta(
+            prev_image_count=len(prev_images),
+            full_mm_extras=full_mm_extras,
+        )
+
+        prefix_len = len(runtime_token_ids)
+        appended_token_ids = full_token_ids[prefix_len:]
+        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+        image_token_spans = self.extract_vision_placeholders(merge_result.token_ids)
+
+        return MergeResult(
+            token_ids=merge_result.token_ids,
+            appended_token_count=merge_result.appended_token_count,
+            kind=merge_result.kind,
+            inserted_token_ids=merge_result.inserted_token_ids,
+            removed_prefix_token_count=merge_result.removed_prefix_token_count,
+            pixel_values=delta_mm_extras.get("pixel_values"),
+            image_grid_thw=delta_mm_extras.get("image_grid_thw", []),
+            image_token_spans=image_token_spans,
+            mm_processor_kwargs=delta_mm_extras.get("mm_processor_kwargs", {}),
+        )
+
+    def _slice_mm_delta(
+        self,
+        prev_image_count: int,
+        full_mm_extras: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Slice full mm_extras to only include new (delta) images."""
+        grid_thw = full_mm_extras.get("image_grid_thw", [])
+        pixel_values = full_mm_extras.get("pixel_values")
+
+        if prev_image_count == 0:
+            return full_mm_extras
+        if prev_image_count >= len(grid_thw):
+            return {}
+
+        delta_grid_thw = grid_thw[prev_image_count:]
+
+        if pixel_values is not None:
+            prev_patch_count = sum(
+                self.count_vision_tokens(tuple(row)) for row in grid_thw[:prev_image_count]
+            )
+            if hasattr(pixel_values, "__getitem__"):
+                delta_pixel_values = pixel_values[prev_patch_count:]
+            else:
+                delta_pixel_values = pixel_values
+        else:
+            delta_pixel_values = None
+
+        return {
+            "pixel_values": delta_pixel_values,
+            "image_grid_thw": delta_grid_thw,
+        }
