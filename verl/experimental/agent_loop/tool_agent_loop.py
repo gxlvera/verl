@@ -374,7 +374,9 @@ class ToolAgentLoop(AgentLoopBase):
 
         agent_data.messages.extend(add_messages)
 
-        if self.enable_continuous_token and not new_images_this_turn:
+        if self.enable_continuous_token and (
+            not new_images_this_turn or self.continuous_token_builder.supports_multimodal()
+        ):
             schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
             merge_result, response_mask, response_logprobs = await self.ct_merge_non_assistant_msg(
                 previous_messages,
@@ -390,6 +392,16 @@ class ToolAgentLoop(AgentLoopBase):
             agent_data.response_mask = response_mask
             if agent_data.response_logprobs:
                 agent_data.response_logprobs = response_logprobs or []
+
+            # For VL builders, accumulate image_data from merge_result
+            if new_images_this_turn and merge_result.pixel_values is not None:
+                if agent_data.image_data is None:
+                    agent_data.image_data = []
+                elif not isinstance(agent_data.image_data, list):
+                    agent_data.image_data = [agent_data.image_data]
+                for img in new_images_this_turn:
+                    agent_data.image_data.append(img)
+
             agent_data.user_turns += 1
             return AgentState.GENERATING
         elif self.tool_parser_name == "gpt-oss":

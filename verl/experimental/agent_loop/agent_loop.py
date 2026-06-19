@@ -228,23 +228,41 @@ class AgentLoopBase(ABC):
         self.continuous_token_builder = None
         self.enable_continuous_token = False
         continuous_token_config = self.rollout_config.multi_turn.continuous_token
-        if continuous_token_config.enable and self.processor is None:
+        if continuous_token_config.enable:
             model_config = self.config.actor_rollout_ref.model
+            # Resolve family first to check if VL builder is needed
+            from verl.utils.continuous_token_wiring import (
+                get_continuous_token_builder_class,
+                resolve_continuous_token_model_family,
+            )
+
+            resolved_family = resolve_continuous_token_model_family(
+                continuous_token_config.model_family,
+                model_path=model_config.path,
+                tokenizer=self.tokenizer,
+                tokenizer_name_or_path=model_config.tokenizer_path,
+            )
+            builder_cls = get_continuous_token_builder_class(resolved_family)
+            needs_processor = hasattr(builder_cls, "supports_multimodal") and builder_cls.supports_multimodal()
+
+            if needs_processor and self.processor is None:
+                raise ValueError(
+                    f"Continuous Token model family {resolved_family!r} requires a processor for multimodal "
+                    f"support, but no processor is available. Ensure the processor is loaded."
+                )
+
             self.continuous_token_builder = create_continuous_token_builder(
                 self.tokenizer,
                 model_family=continuous_token_config.model_family,
                 model_path=model_config.path,
                 tokenizer_name_or_path=model_config.tokenizer_path,
                 chat_template_kwargs=self.apply_chat_template_kwargs,
+                processor=self.processor,
             )
             self.enable_continuous_token = True
             # Continuous Token doesn't use the legacy removable system prompt.
             self.system_prompt = None
         else:
-            if continuous_token_config.enable and self.processor is not None:
-                logger.warning(
-                    "Continuous Token is enabled but processor is set; falling back to legacy multimodal path."
-                )
             processing_class = self.processor if self.processor is not None else self.tokenizer
             self.system_prompt = initialize_system_prompt(processing_class, **self.apply_chat_template_kwargs)
         self.loop = get_event_loop()
