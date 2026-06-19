@@ -34,11 +34,29 @@ def extract_solution(solution_str):
     return final_solution
 
 
+def _load_raw_split(raw_dir, split):
+    """Load a raw GSM8K split (columns: question, answer) from a local directory.
+
+    Supports {split}.parquet / {split}.json / {split}.jsonl. This is the offline
+    path for environments without HuggingFace/ModelScope network access.
+    """
+    for ext, builder in (("parquet", "parquet"), ("jsonl", "json"), ("json", "json")):
+        path = os.path.join(raw_dir, f"{split}.{ext}")
+        if os.path.exists(path):
+            return datasets.load_dataset(builder, data_files=path, split="train")
+    raise FileNotFoundError(f"No raw '{split}' file (parquet/jsonl/json) found under {raw_dir}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--local_dir", default=None, help="The save directory for the preprocessed dataset.")
     parser.add_argument("--hdfs_dir", default=None)
     parser.add_argument("--local_dataset_path", default=None, help="The local path to the raw dataset, if it exists.")
+    parser.add_argument(
+        "--raw_dir",
+        default=None,
+        help="Offline source dir holding raw {train,test}.{parquet,jsonl,json} with columns question/answer.",
+    )
     parser.add_argument(
         "--local_save_dir", default="~/data/gsm8k", help="The save directory for the preprocessed dataset."
     )
@@ -48,13 +66,18 @@ if __name__ == "__main__":
 
     data_source = "openai/gsm8k"
 
-    if local_dataset_path is not None:
-        dataset = datasets.load_dataset(local_dataset_path, "main")
+    if args.raw_dir is not None:
+        # Offline: read the official train/test splits from local raw files.
+        train_dataset = _load_raw_split(args.raw_dir, "train")
+        test_dataset = _load_raw_split(args.raw_dir, "test")
     else:
-        dataset = datasets.load_dataset(data_source, "main")
+        if local_dataset_path is not None:
+            dataset = datasets.load_dataset(local_dataset_path, "main")
+        else:
+            dataset = datasets.load_dataset(data_source, "main")
 
-    train_dataset = dataset["train"]
-    test_dataset = dataset["test"]
+        train_dataset = dataset["train"]
+        test_dataset = dataset["test"]
 
     instruction_following = "Let's think step by step and output the final answer after `####`."
 
@@ -110,6 +133,16 @@ if __name__ == "__main__":
 
     train_dataset = train_dataset.map(function=make_map_fn("train"), with_indices=True)
     test_dataset = test_dataset.map(function=make_map_fn("test"), with_indices=True)
+
+    # Leakage guard: train and test questions must be disjoint (no test sample seen in training).
+    train_questions = {ex["extra_info"]["question"] for ex in train_dataset}
+    test_questions = {ex["extra_info"]["question"] for ex in test_dataset}
+    overlap = train_questions & test_questions
+    print(f"[gsm8k] train={len(train_dataset)} test={len(test_dataset)} overlap_questions={len(overlap)}")
+    assert not overlap, (
+        f"Data leakage: {len(overlap)} test question(s) also appear in train. "
+        "Refusing to write a contaminated split."
+    )
 
     hdfs_dir = args.hdfs_dir
     local_save_dir = args.local_dir
