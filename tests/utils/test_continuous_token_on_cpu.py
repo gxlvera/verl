@@ -16,16 +16,23 @@ import logging
 
 import pytest
 
-from verl.utils.tokenizer.continuous_token import (
+from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
+    DeepSeekContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
+    KimiContinuousTokenBuilder,
     MergeResult,
+    MiMoContinuousTokenBuilder,
+    MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
+    Nemotron4ContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
+    QwenVLContinuousTokenBuilder,
+    ct_align_response_metadata,
 )
-from verl.utils.tokenizer.continuous_token_wiring import (
+from verl.utils.continuous_token_wiring import (
     CONTINUOUS_TOKEN_BUILDER_FAMILIES,
     ContinuousTokenModelFamily,
     create_continuous_token_builder,
@@ -234,6 +241,14 @@ def test_builtin_family_surface():
         "glm5",
         "gemma4",
         "gptoss",
+        "mimo",
+        "deepseek",
+        "kimi",
+        "nemotron4",
+        "qwenvl",
+        "qwen25vl",
+        "qwen3vl",
+        "mimovl",
     )
     assert list_continuous_token_builder_families() == CONTINUOUS_TOKEN_BUILDER_FAMILIES
 
@@ -254,6 +269,14 @@ def test_builtin_family_surface():
         (ContinuousTokenModelFamily.GLM5, GLMContinuousTokenBuilder),
         (ContinuousTokenModelFamily.GEMMA4, Gemma4ContinuousTokenBuilder),
         (ContinuousTokenModelFamily.GPTOSS, GptOssContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.MIMO, MiMoContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.DEEPSEEK, DeepSeekContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.KIMI, KimiContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.NEMOTRON4, Nemotron4ContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.QWEN_VL, QwenVLContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.QWEN25_VL, QwenVLContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.QWEN3_VL, QwenVLContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.MIMO_VL, MiMoVLContinuousTokenBuilder),
     ],
 )
 def test_builtin_family_class_mapping(family, builder_cls):
@@ -274,7 +297,16 @@ def test_builtin_family_class_mapping(family, builder_cls):
         ("Qwen/Qwen3.5-35B-A3B", ContinuousTokenModelFamily.QWEN35),
         ("Qwen/Qwen2.5-7B-Instruct", ContinuousTokenModelFamily.QWEN25),
         ("Qwen/Qwen3-8B", ContinuousTokenModelFamily.QWEN3),
-        ("deepseek-ai/DeepSeek-R1", ContinuousTokenModelFamily.DEFAULT),
+        ("deepseek-ai/DeepSeek-R1", ContinuousTokenModelFamily.DEEPSEEK),
+        # New families
+        ("XiaomiMiMo/MiMo-7B-RL", ContinuousTokenModelFamily.MIMO),
+        ("moonshotai/Kimi-VL-A3B-Instruct", ContinuousTokenModelFamily.KIMI),
+        ("nvidia/Nemotron-4-340B-Instruct", ContinuousTokenModelFamily.NEMOTRON4),
+        # VL families
+        ("Qwen/Qwen2.5-VL-7B-Instruct", ContinuousTokenModelFamily.QWEN25_VL),
+        ("Qwen/Qwen3-VL-4B", ContinuousTokenModelFamily.QWEN3_VL),
+        ("Qwen/Qwen2-VL-72B-Instruct", ContinuousTokenModelFamily.QWEN_VL),
+        ("XiaomiMiMo/MiMo-VL-7B", ContinuousTokenModelFamily.MIMO_VL),
     ],
 )
 def test_auto_family_inference(model_path, expected):

@@ -22,11 +22,17 @@ from typing import Any
 
 from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
+    DeepSeekContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
+    KimiContinuousTokenBuilder,
+    MiMoContinuousTokenBuilder,
+    MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
+    Nemotron4ContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
+    QwenVLContinuousTokenBuilder,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +53,16 @@ class ContinuousTokenModelFamily(StrEnum):
     GLM5 = "glm5"
     GEMMA4 = "gemma4"
     GPTOSS = "gptoss"
+    # New text families
+    MIMO = "mimo"
+    DEEPSEEK = "deepseek"
+    KIMI = "kimi"
+    NEMOTRON4 = "nemotron4"
+    # Multimodal (VL) families
+    QWEN_VL = "qwenvl"
+    QWEN25_VL = "qwen25vl"
+    QWEN3_VL = "qwen3vl"
+    MIMO_VL = "mimovl"
 
 
 _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] = {
@@ -63,6 +79,16 @@ _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] 
     ContinuousTokenModelFamily.GLM5: GLMContinuousTokenBuilder,
     ContinuousTokenModelFamily.GEMMA4: Gemma4ContinuousTokenBuilder,
     ContinuousTokenModelFamily.GPTOSS: GptOssContinuousTokenBuilder,
+    # New text families
+    ContinuousTokenModelFamily.MIMO: MiMoContinuousTokenBuilder,
+    ContinuousTokenModelFamily.DEEPSEEK: DeepSeekContinuousTokenBuilder,
+    ContinuousTokenModelFamily.KIMI: KimiContinuousTokenBuilder,
+    ContinuousTokenModelFamily.NEMOTRON4: Nemotron4ContinuousTokenBuilder,
+    # Multimodal (VL) families
+    ContinuousTokenModelFamily.QWEN_VL: QwenVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.QWEN25_VL: QwenVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.QWEN3_VL: QwenVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.MIMO_VL: MiMoVLContinuousTokenBuilder,
 }
 
 CONTINUOUS_TOKEN_BUILDER_FAMILIES = tuple(family.value for family in _CONTINUOUS_TOKEN_BUILDER_REGISTRY)
@@ -125,6 +151,35 @@ def infer_continuous_token_model_family(
     haystack = " ".join(str(item).lower() for item in candidates if item)
     compact = re.sub(r"[^a-z0-9]+", "", haystack)
 
+    # --- VL families (must match before text families) ---
+    # MiMo-VL
+    if any(marker in haystack for marker in ("mimo-vl", "mimo_vl", "mimovl")):
+        return ContinuousTokenModelFamily.MIMO_VL
+    # Qwen3-VL / Qwen3-VL-MoE
+    if any(marker in haystack for marker in ("qwen3-vl", "qwen3_vl")) or "qwen3vl" in compact:
+        return ContinuousTokenModelFamily.QWEN3_VL
+    # Qwen2.5-VL
+    if any(marker in haystack for marker in ("qwen2.5-vl", "qwen2_5-vl", "qwen2_5_vl")) or "qwen25vl" in compact:
+        return ContinuousTokenModelFamily.QWEN25_VL
+    # Qwen2-VL (also routes to QWEN_VL)
+    if any(marker in haystack for marker in ("qwen2-vl", "qwen2_vl")) or "qwen2vl" in compact:
+        return ContinuousTokenModelFamily.QWEN_VL
+
+    # --- New text families ---
+    # MiMo (text-only, after VL check)
+    if "mimo" in compact and "minimax" not in compact:
+        return ContinuousTokenModelFamily.MIMO
+    # DeepSeek
+    if any(marker in haystack for marker in ("deepseek", "deep-seek", "deep_seek")):
+        return ContinuousTokenModelFamily.DEEPSEEK
+    # Kimi (Moonshot)
+    if any(marker in haystack for marker in ("kimi", "moonshot")):
+        return ContinuousTokenModelFamily.KIMI
+    # Nemotron-4
+    if any(marker in haystack for marker in ("nemotron-4", "nemotron_4", "nemotron4")):
+        return ContinuousTokenModelFamily.NEMOTRON4
+
+    # --- Existing families ---
     if any(marker in haystack for marker in ("glm-5", "glm_5")) or "glm5" in compact:
         return ContinuousTokenModelFamily.GLM5
     if any(marker in haystack for marker in ("glm-4.7", "glm_4.7", "glm4.7")) or "glm47" in compact:
@@ -165,9 +220,13 @@ def create_continuous_token_builder(
     model_path: str | None = None,
     tokenizer_name_or_path: str | None = None,
     chat_template_kwargs: dict[str, Any] | None = None,
+    processor: Any | None = None,
     **builder_kwargs: Any,
 ) -> Any:
-    """Instantiate the registered builder selected by config/model metadata."""
+    """Instantiate the registered builder selected by config/model metadata.
+
+    For multimodal (VL) families, ``processor`` must be provided.
+    """
     resolved_family = resolve_continuous_token_model_family(
         model_family,
         model_path=model_path,
@@ -176,6 +235,16 @@ def create_continuous_token_builder(
     )
     builder_cls = get_continuous_token_builder_class(resolved_family)
     logger.info("Creating Continuous Token builder: family=%s class=%s", resolved_family, builder_cls)
+
+    # VL builders require processor as positional arg
+    if hasattr(builder_cls, "supports_multimodal") and builder_cls.supports_multimodal():
+        if processor is None:
+            raise ValueError(
+                f"Multimodal builder {builder_cls.__name__} requires a processor, but none was provided. "
+                f"Pass processor= when using model_family={resolved_family!r}."
+            )
+        return builder_cls(tokenizer, processor, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
+
     return builder_cls(tokenizer, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
 
 

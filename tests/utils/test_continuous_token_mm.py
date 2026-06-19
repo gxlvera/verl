@@ -171,3 +171,333 @@ class TestMultimodalMergeResultWithExistingSubclasses:
         assert result.image_grid_thw == []
         assert result.image_token_spans == []
         assert result.mm_processor_kwargs == {}
+
+
+# =============================================================================
+# Tests for new text subclasses
+# =============================================================================
+
+
+class TestMiMoContinuousTokenBuilder:
+    """Test MiMo ChatML boundary handling (identical to Qwen pattern)."""
+
+    def setup_method(self):
+        from verl.utils.continuous_token import MiMoContinuousTokenBuilder
+
+        class MockMiMoTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                if text == "\n":
+                    return [198]
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                if token == "<|im_end|>":
+                    return 151645
+                return 0
+
+        self.builder = MiMoContinuousTokenBuilder(MockMiMoTokenizer())
+
+    def test_inserts_newline_after_im_end(self):
+        result = self.builder._merge_token_ids([100, 151645], [10, 20])
+        assert result.token_ids == [100, 151645, 198, 10, 20]
+        assert result.inserted_token_ids == [198]
+        assert result.appended_token_count == 2
+
+    def test_no_insert_when_not_im_end(self):
+        result = self.builder._merge_token_ids([100, 200], [10, 20])
+        assert result.token_ids == [100, 200, 10, 20]
+        assert result.inserted_token_ids == []
+
+    def test_empty_prefix(self):
+        result = self.builder._merge_token_ids([], [10, 20])
+        assert result.token_ids == [10, 20]
+        assert result.inserted_token_ids == []
+
+
+class TestDeepSeekContinuousTokenBuilder:
+    """Test DeepSeek direct concatenation boundary handling."""
+
+    def setup_method(self):
+        from verl.utils.continuous_token import DeepSeekContinuousTokenBuilder
+
+        class MockDeepSeekTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                # DeepSeek EOS with fullwidth chars
+                if "end" in token and "sentence" in token:
+                    return 100265
+                return 0
+
+        self.builder = DeepSeekContinuousTokenBuilder(MockDeepSeekTokenizer())
+
+    def test_direct_concatenation(self):
+        """DeepSeek should do direct concat, no separator inserted."""
+        result = self.builder._merge_token_ids([100, 200, 100265], [10, 20])
+        assert result.token_ids == [100, 200, 100265, 10, 20]
+        assert result.inserted_token_ids == []
+        assert result.appended_token_count == 2
+
+    def test_no_separator_even_without_eos(self):
+        result = self.builder._merge_token_ids([100, 200], [10, 20])
+        assert result.token_ids == [100, 200, 10, 20]
+        assert result.inserted_token_ids == []
+
+
+class TestKimiContinuousTokenBuilder:
+    """Test Kimi three-part turn boundary handling."""
+
+    def setup_method(self):
+        from verl.utils.continuous_token import KimiContinuousTokenBuilder
+
+        class MockKimiTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                if token == "<|im_end|>":
+                    return 92542
+                return 0
+
+        self.builder = KimiContinuousTokenBuilder(MockKimiTokenizer())
+
+    def test_direct_concat_after_im_end(self):
+        """Kimi should NOT insert newline after im_end (unlike Qwen)."""
+        result = self.builder._merge_token_ids([100, 92542], [10, 20])
+        assert result.token_ids == [100, 92542, 10, 20]
+        assert result.inserted_token_ids == []
+        assert result.appended_token_count == 2
+
+    def test_direct_concat_normal(self):
+        result = self.builder._merge_token_ids([100, 200], [10, 20])
+        assert result.token_ids == [100, 200, 10, 20]
+        assert result.inserted_token_ids == []
+
+
+class TestNemotron4ContinuousTokenBuilder:
+    """Test Nemotron-4 extra_id boundary handling."""
+
+    def setup_method(self):
+        from verl.utils.continuous_token import Nemotron4ContinuousTokenBuilder
+
+        class MockNemotronTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                if token == "<extra_id_0>":
+                    return 32000
+                if token == "<extra_id_1>":
+                    return 32001
+                return 0
+
+        self.builder = Nemotron4ContinuousTokenBuilder(MockNemotronTokenizer())
+
+    def test_direct_concat(self):
+        """Nemotron-4 should direct concat (no end-of-turn delimiter)."""
+        result = self.builder._merge_token_ids([100, 200], [10, 20])
+        assert result.token_ids == [100, 200, 10, 20]
+        assert result.inserted_token_ids == []
+        assert result.appended_token_count == 2
+
+
+# =============================================================================
+# Tests for VL subclasses
+# =============================================================================
+
+
+class TestQwenVLContinuousTokenBuilder:
+    """Test QwenVL vision token handling."""
+
+    def setup_method(self):
+        from verl.utils.continuous_token import QwenVLContinuousTokenBuilder
+
+        class MockQwenVLTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                if text == "\n":
+                    return [198]
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                mapping = {
+                    "<|im_end|>": 151645,
+                    "<|vision_start|>": 151652,
+                    "<|vision_end|>": 151653,
+                    "<|image_pad|>": 151655,
+                }
+                return mapping.get(token, 0)
+
+        class MockImageProcessor:
+            merge_size = 2
+
+        class MockProcessor:
+            image_processor = MockImageProcessor()
+
+        self.tokenizer = MockQwenVLTokenizer()
+        self.processor = MockProcessor()
+        self.builder = QwenVLContinuousTokenBuilder(self.tokenizer, self.processor)
+
+    def test_supports_multimodal(self):
+        assert self.builder.supports_multimodal() is True
+
+    def test_count_vision_tokens_single_image(self):
+        """t=1, h=28, w=28, merge=2 → 1 * 14 * 14 = 196."""
+        count = self.builder.count_vision_tokens((1, 28, 28))
+        assert count == 196
+
+    def test_count_vision_tokens_video(self):
+        """t=4, h=14, w=14, merge=2 → 4 * 7 * 7 = 196."""
+        count = self.builder.count_vision_tokens((4, 14, 14))
+        assert count == 196
+
+    def test_extract_vision_placeholders(self):
+        """Should find vision spans between start and end markers."""
+        # <|vision_start|>=151652, <|image_pad|>=151655, <|vision_end|>=151653
+        token_ids = [1, 2, 151652, 151655, 151655, 151655, 151653, 3, 4]
+        spans = self.builder.extract_vision_placeholders(token_ids)
+        assert spans == [(3, 6)]  # indices of the pad tokens
+
+    def test_extract_vision_placeholders_multiple_images(self):
+        """Should find multiple vision spans."""
+        token_ids = [
+            151652, 151655, 151655, 151653,  # image 1: indices 1-3
+            10, 20,
+            151652, 151655, 151653,  # image 2: indices 7-8
+        ]
+        spans = self.builder.extract_vision_placeholders(token_ids)
+        assert spans == [(1, 3), (7, 8)]
+
+    def test_extract_vision_placeholders_no_images(self):
+        """No vision markers → empty list."""
+        token_ids = [1, 2, 3, 4, 5]
+        spans = self.builder.extract_vision_placeholders(token_ids)
+        assert spans == []
+
+    def test_merge_inherits_qwen_newline_patch(self):
+        """VL builder should still insert newline after im_end (from QwenBuilder)."""
+        result = self.builder._merge_token_ids([100, 151645], [10, 20])
+        assert result.token_ids == [100, 151645, 198, 10, 20]
+        assert result.inserted_token_ids == [198]
+
+
+class TestMiMoVLContinuousTokenBuilder:
+    """Test MiMo-VL vision token handling."""
+
+    def setup_method(self):
+        from verl.utils.continuous_token import MiMoVLContinuousTokenBuilder
+
+        class MockMiMoVLTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                if text == "\n":
+                    return [198]
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                mapping = {
+                    "<|im_end|>": 151645,
+                    "<|vision_start|>": 151652,
+                    "<|vision_end|>": 151653,
+                    "<|image_pad|>": 151655,
+                }
+                return mapping.get(token, 0)
+
+        class MockImageProcessor:
+            merge_size = 2
+
+        class MockProcessor:
+            image_processor = MockImageProcessor()
+
+        self.tokenizer = MockMiMoVLTokenizer()
+        self.processor = MockProcessor()
+        self.builder = MiMoVLContinuousTokenBuilder(self.tokenizer, self.processor)
+
+    def test_supports_multimodal(self):
+        assert self.builder.supports_multimodal() is True
+
+    def test_count_vision_tokens(self):
+        count = self.builder.count_vision_tokens((1, 28, 28))
+        assert count == 196
+
+    def test_extract_vision_placeholders(self):
+        token_ids = [1, 151652, 151655, 151655, 151653, 2]
+        spans = self.builder.extract_vision_placeholders(token_ids)
+        assert spans == [(2, 4)]
+
+    def test_merge_inherits_mimo_newline_patch(self):
+        """MiMo-VL should still insert newline after im_end (from MiMoBuilder)."""
+        result = self.builder._merge_token_ids([100, 151645], [10, 20])
+        assert result.token_ids == [100, 151645, 198, 10, 20]
+        assert result.inserted_token_ids == [198]
+
+
+# =============================================================================
+# Tests for wiring factory with VL families
+# =============================================================================
+
+
+class TestWiringVLFactory:
+    """Test that create_continuous_token_builder handles VL families correctly."""
+
+    def test_vl_family_requires_processor(self):
+        """VL families should raise if processor not provided."""
+        from verl.utils.continuous_token_wiring import create_continuous_token_builder
+
+        class MockTokenizer:
+            name_or_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+
+            def encode(self, text, add_special_tokens=False):
+                if text == "\n":
+                    return [198]
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                mapping = {
+                    "<|im_end|>": 151645,
+                    "<|vision_start|>": 151652,
+                    "<|vision_end|>": 151653,
+                    "<|image_pad|>": 151655,
+                }
+                return mapping.get(token, 0)
+
+        with pytest.raises(ValueError, match="requires a processor"):
+            create_continuous_token_builder(
+                MockTokenizer(),
+                model_family="qwen25vl",
+            )
+
+    def test_vl_family_succeeds_with_processor(self):
+        """VL families should instantiate correctly with processor provided."""
+        from verl.utils.continuous_token import QwenVLContinuousTokenBuilder
+        from verl.utils.continuous_token_wiring import create_continuous_token_builder
+
+        class MockTokenizer:
+            name_or_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+
+            def encode(self, text, add_special_tokens=False):
+                if text == "\n":
+                    return [198]
+                return [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                mapping = {
+                    "<|im_end|>": 151645,
+                    "<|vision_start|>": 151652,
+                    "<|vision_end|>": 151653,
+                    "<|image_pad|>": 151655,
+                }
+                return mapping.get(token, 0)
+
+        class MockImageProcessor:
+            merge_size = 2
+
+        class MockProcessor:
+            image_processor = MockImageProcessor()
+
+        builder = create_continuous_token_builder(
+            MockTokenizer(),
+            model_family="qwen25vl",
+            processor=MockProcessor(),
+        )
+        assert isinstance(builder, QwenVLContinuousTokenBuilder)
+        assert builder.supports_multimodal() is True
