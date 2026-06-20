@@ -1344,18 +1344,9 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
             )
             return self._merge_token_ids(runtime_token_ids, appended_ids)
 
-        # GLM boundary handling deletes tokens from runtime, so full render is
-        # needed for correct token_ids. Incremental render gets pixel_values only.
-        all_images = self._extract_images_from_messages(updated_messages)
-        full_token_ids, _ = self.render_tokens_with_mm(
-            updated_messages, all_images, add_generation_prompt=True, tools=tools,
-        )
-        _, delta_mm_extras = self._render_incremental_with_mm(
+        appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
             appended_messages, new_images, tools=tools,
         )
-
-        prefix_len = len(runtime_token_ids)
-        appended_token_ids = list(full_token_ids[prefix_len:])
         merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
         prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
