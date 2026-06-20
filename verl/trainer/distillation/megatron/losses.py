@@ -294,6 +294,16 @@ def compute_forward_kl_topk(
 
     # 2. compute token-wise KL divergence across tp groups
     distillation_loss_config: DistillationLossConfig = config.distillation_loss
+    if getattr(distillation_loss_config, "clip_tau", None) is not None:
+        # OPSD per-vocab pointwise KL clip is FSDP-only in cut 1. The Megatron
+        # forward-KL is a hand-written autograd Function whose analytic backward must
+        # also zero the gradient of clipped entries (mirroring the active_mask logic
+        # for log_prob_min_clamp); a bare forward clamp_max would desync the gradient.
+        # A correct Megatron implementation is tracked as a follow-up.
+        raise NotImplementedError(
+            "distillation_loss.clip_tau is currently FSDP-only; Megatron support is a follow-up "
+            "because the custom backward must zero clipped-entry gradients."
+        )
     distillation_losses, student_mass, teacher_mass, overlap_count, overlap_token_advantage = (
         _VocabParallelKLDivergence.apply(
             student_logits,

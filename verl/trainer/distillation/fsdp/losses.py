@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
 
@@ -63,12 +65,23 @@ def _chunked_topk_log_probs(
     return out.reshape(B, T, K)
 
 
-def kl_divergence(log_q: torch.Tensor, log_p: torch.Tensor) -> torch.Tensor:
-    """Compute KL divergence between two distributions given their log probabilities."""
+def kl_divergence(
+    log_q: torch.Tensor, log_p: torch.Tensor, clip_tau: Optional[float] = None
+) -> torch.Tensor:
+    """Compute KL divergence between two distributions given their log probabilities.
+
+    When ``clip_tau`` is set, each per-vocab contribution ``ℓ_{n,v} = p*(log_p - log_q)``
+    is clamped to at most ``clip_tau`` *before* the vocab sum (OPSD pointwise KL
+    clipping, arXiv:2601.18734 §4.3.3): a few stylistic tokens otherwise dominate the
+    per-position divergence and the gradient. This is distinct from
+    ``DistillationLossConfig.loss_max_clamp``, which clamps the post-sum scalar.
+    """
     log_p = log_p.float()
     log_q = log_q.float()
     p = log_p.exp()
     kld = p * (log_p - log_q)
+    if clip_tau is not None:
+        kld = kld.clamp_max(clip_tau)
     return kld.sum(dim=-1)
 
 
@@ -127,7 +140,11 @@ def compute_forward_kl_topk(
     if loss_config.log_prob_min_clamp is not None:
         student_topk_log_probs = student_topk_log_probs.clamp_min(loss_config.log_prob_min_clamp)
         teacher_topk_log_probs = teacher_topk_log_probs.clamp_min(loss_config.log_prob_min_clamp)
-    distillation_losses = kl_divergence(log_q=student_topk_log_probs, log_p=teacher_topk_log_probs)
+    distillation_losses = kl_divergence(
+        log_q=student_topk_log_probs,
+        log_p=teacher_topk_log_probs,
+        clip_tau=getattr(loss_config, "clip_tau", None),  # OPSD pointwise KL clip (per-vocab)
+    )
 
     # Diagnostics for tracking teacher/student top-k overlap in OPD, following
     # "Rethinking On-Policy Distillation of Large Language Models" (arXiv:2604.13016).
