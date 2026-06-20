@@ -747,44 +747,39 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
     ) -> MergeResult:
         """Merge tokens with multimodal awareness.
 
-        If new images appear in the appended messages, re-renders the full
-        message list through the processor and slices out the delta mm_extras.
-        Otherwise falls back to text-only incremental merge.
+        If new images appear, renders the full message list for correct token_ids,
+        but obtains pixel_values incrementally (only new images) to avoid
+        re-processing old images through the vision encoder.
         """
         self._assert_append_only(previous_messages, updated_messages)
         appended_messages = updated_messages[len(previous_messages):]
 
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            # No new images — use text-only incremental merge (inherited)
             appended_ids = self.tokenize_incremental_messages(
                 previous_messages, updated_messages, tools=tools
             )
             result = self._merge_token_ids(runtime_token_ids, appended_ids)
             return result
 
-        # New images present — re-render full message list through processor
+        # Full render for correct token_ids (chat template needs full context)
         all_images = self._extract_images_from_messages(updated_messages)
-        prev_images = self._extract_images_from_messages(previous_messages)
-
-        full_token_ids, full_mm_extras = self.render_tokens_with_mm(
+        full_token_ids, _ = self.render_tokens_with_mm(
             updated_messages, all_images, add_generation_prompt=True, tools=tools
         )
 
-        # Slice mm_extras: only the delta (new images) portion
-        delta_mm_extras = self._slice_mm_delta(
-            prev_image_count=len(prev_images),
-            full_mm_extras=full_mm_extras,
+        # Incremental render: only new images for pixel_values (O(1) per new image)
+        delta_token_ids, delta_mm_extras = self.render_tokens_with_mm(
+            appended_messages, new_images, add_generation_prompt=True, tools=tools
         )
 
         # Compute appended tokens via prefix diff
         prefix_len = len(runtime_token_ids)
         appended_token_ids = full_token_ids[prefix_len:]
 
-        # Apply boundary handling (newline after im_end from QwenBuilder)
         merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
 
-        # Populate MM fields — only spans for new images to align with delta pixel_values
+        prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]
 
@@ -1038,20 +1033,19 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
             return self._merge_token_ids(runtime_token_ids, appended_ids)
 
         all_images = self._extract_images_from_messages(updated_messages)
-        prev_images = self._extract_images_from_messages(previous_messages)
 
-        full_token_ids, full_mm_extras = self.render_tokens_with_mm(
+        full_token_ids, _ = self.render_tokens_with_mm(
             updated_messages, all_images, add_generation_prompt=True, tools=tools
         )
 
-        delta_mm_extras = self._slice_mm_delta(
-            prev_image_count=len(prev_images),
-            full_mm_extras=full_mm_extras,
+        delta_token_ids, delta_mm_extras = self.render_tokens_with_mm(
+            appended_messages, new_images, add_generation_prompt=True, tools=tools
         )
 
         prefix_len = len(runtime_token_ids)
         appended_token_ids = full_token_ids[prefix_len:]
         merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+        prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]
 
@@ -1238,17 +1232,17 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
             return self._merge_token_ids(runtime_token_ids, appended_ids)
 
         all_images = self._extract_images_from_messages(updated_messages)
-        prev_images = self._extract_images_from_messages(previous_messages)
 
-        full_token_ids, full_mm_extras = self.render_tokens_with_mm(
+        full_token_ids, _ = self.render_tokens_with_mm(
             updated_messages, all_images, add_generation_prompt=True, tools=tools,
         )
-        delta_mm_extras = self._slice_mm_delta(
-            prev_image_count=len(prev_images), full_mm_extras=full_mm_extras,
+        delta_token_ids, delta_mm_extras = self.render_tokens_with_mm(
+            updated_messages[len(previous_messages):], new_images, add_generation_prompt=True, tools=tools,
         )
 
         prefix_len = len(runtime_token_ids)
         merge_result = self._merge_token_ids(runtime_token_ids, full_token_ids[prefix_len:])
+        prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]
 
@@ -1422,17 +1416,17 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
             return self._merge_token_ids(runtime_token_ids, appended_ids)
 
         all_images = self._extract_images_from_messages(updated_messages)
-        prev_images = self._extract_images_from_messages(previous_messages)
 
-        full_token_ids, full_mm_extras = self.render_tokens_with_mm(
+        full_token_ids, _ = self.render_tokens_with_mm(
             updated_messages, all_images, add_generation_prompt=True, tools=tools,
         )
-        delta_mm_extras = self._slice_mm_delta(
-            prev_image_count=len(prev_images), full_mm_extras=full_mm_extras,
+        delta_token_ids, delta_mm_extras = self.render_tokens_with_mm(
+            updated_messages[len(previous_messages):], new_images, add_generation_prompt=True, tools=tools,
         )
 
         prefix_len = len(runtime_token_ids)
         merge_result = self._merge_token_ids(runtime_token_ids, full_token_ids[prefix_len:])
+        prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]
 
