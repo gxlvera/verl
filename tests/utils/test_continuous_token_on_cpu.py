@@ -19,8 +19,10 @@ import pytest
 from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
+    GLM4VContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
+    KimiVLContinuousTokenBuilder,
     MergeResult,
     MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
@@ -241,6 +243,8 @@ def test_builtin_family_surface():
         "qwen25vl",
         "qwen3vl",
         "mimovl",
+        "kimivl",
+        "glm4v",
     )
     assert list_continuous_token_builder_families() == CONTINUOUS_TOKEN_BUILDER_FAMILIES
 
@@ -265,6 +269,8 @@ def test_builtin_family_surface():
         (ContinuousTokenModelFamily.QWEN25_VL, QwenVLContinuousTokenBuilder),
         (ContinuousTokenModelFamily.QWEN3_VL, QwenVLContinuousTokenBuilder),
         (ContinuousTokenModelFamily.MIMO_VL, MiMoVLContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.KIMI_VL, KimiVLContinuousTokenBuilder),
+        (ContinuousTokenModelFamily.GLM4V, GLM4VContinuousTokenBuilder),
     ],
 )
 def test_builtin_family_class_mapping(family, builder_cls):
@@ -291,6 +297,8 @@ def test_builtin_family_class_mapping(family, builder_cls):
         ("Qwen/Qwen3-VL-4B", ContinuousTokenModelFamily.QWEN3_VL),
         ("Qwen/Qwen2-VL-72B-Instruct", ContinuousTokenModelFamily.QWEN_VL),
         ("XiaomiMiMo/MiMo-VL-7B", ContinuousTokenModelFamily.MIMO_VL),
+        ("moonshotai/Kimi-VL-A3B-Instruct", ContinuousTokenModelFamily.KIMI_VL),
+        ("zai-org/GLM-4.5V", ContinuousTokenModelFamily.GLM4V),
     ],
 )
 def test_auto_family_inference(model_path, expected):

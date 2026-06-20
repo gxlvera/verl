@@ -23,8 +23,10 @@ from typing import Any
 from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
+    GLM4VContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
+    KimiVLContinuousTokenBuilder,
     MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
@@ -54,6 +56,8 @@ class ContinuousTokenModelFamily(StrEnum):
     QWEN25_VL = "qwen25vl"
     QWEN3_VL = "qwen3vl"
     MIMO_VL = "mimovl"
+    KIMI_VL = "kimivl"
+    GLM4V = "glm4v"
 
 
 _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] = {
@@ -75,6 +79,8 @@ _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] 
     ContinuousTokenModelFamily.QWEN25_VL: QwenVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN3_VL: QwenVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.MIMO_VL: MiMoVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.KIMI_VL: KimiVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.GLM4V: GLM4VContinuousTokenBuilder,
 }
 
 CONTINUOUS_TOKEN_BUILDER_FAMILIES = tuple(family.value for family in _CONTINUOUS_TOKEN_BUILDER_REGISTRY)
@@ -150,6 +156,12 @@ def infer_continuous_token_model_family(
     # Qwen2-VL (also routes to QWEN_VL)
     if any(marker in haystack for marker in ("qwen2-vl", "qwen2_vl")) or "qwen2vl" in compact:
         return ContinuousTokenModelFamily.QWEN_VL
+    # Kimi-VL
+    if any(marker in haystack for marker in ("kimi-vl", "kimi_vl")) or "kimivl" in compact:
+        return ContinuousTokenModelFamily.KIMI_VL
+    # GLM-4V / GLM-4.5-VL
+    if any(marker in haystack for marker in ("glm-4v", "glm4v", "glm-4.5v", "glm-4.1v", "glm-4.5-vl", "glm-4.1-vl")):
+        return ContinuousTokenModelFamily.GLM4V
 
     # --- Existing families ---
     if any(marker in haystack for marker in ("glm-5", "glm_5")) or "glm5" in compact:
