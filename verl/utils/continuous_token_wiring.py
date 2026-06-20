@@ -22,15 +22,11 @@ from typing import Any
 
 from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
-    DeepSeekContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
-    KimiContinuousTokenBuilder,
-    MiMoContinuousTokenBuilder,
     MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
-    Nemotron4ContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
     QwenVLContinuousTokenBuilder,
 )
@@ -53,11 +49,6 @@ class ContinuousTokenModelFamily(StrEnum):
     GLM5 = "glm5"
     GEMMA4 = "gemma4"
     GPTOSS = "gptoss"
-    # New text families
-    MIMO = "mimo"
-    DEEPSEEK = "deepseek"
-    KIMI = "kimi"
-    NEMOTRON4 = "nemotron4"
     # Multimodal (VL) families
     QWEN_VL = "qwenvl"
     QWEN25_VL = "qwen25vl"
@@ -79,11 +70,6 @@ _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] 
     ContinuousTokenModelFamily.GLM5: GLMContinuousTokenBuilder,
     ContinuousTokenModelFamily.GEMMA4: Gemma4ContinuousTokenBuilder,
     ContinuousTokenModelFamily.GPTOSS: GptOssContinuousTokenBuilder,
-    # New text families
-    ContinuousTokenModelFamily.MIMO: MiMoContinuousTokenBuilder,
-    ContinuousTokenModelFamily.DEEPSEEK: DeepSeekContinuousTokenBuilder,
-    ContinuousTokenModelFamily.KIMI: KimiContinuousTokenBuilder,
-    ContinuousTokenModelFamily.NEMOTRON4: Nemotron4ContinuousTokenBuilder,
     # Multimodal (VL) families
     ContinuousTokenModelFamily.QWEN_VL: QwenVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN25_VL: QwenVLContinuousTokenBuilder,
@@ -164,20 +150,6 @@ def infer_continuous_token_model_family(
     # Qwen2-VL (also routes to QWEN_VL)
     if any(marker in haystack for marker in ("qwen2-vl", "qwen2_vl")) or "qwen2vl" in compact:
         return ContinuousTokenModelFamily.QWEN_VL
-
-    # --- New text families ---
-    # MiMo (text-only, after VL check)
-    if "mimo" in compact and "minimax" not in compact:
-        return ContinuousTokenModelFamily.MIMO
-    # DeepSeek
-    if any(marker in haystack for marker in ("deepseek", "deep-seek", "deep_seek")):
-        return ContinuousTokenModelFamily.DEEPSEEK
-    # Kimi (Moonshot)
-    if any(marker in haystack for marker in ("kimi", "moonshot")):
-        return ContinuousTokenModelFamily.KIMI
-    # Nemotron-4
-    if any(marker in haystack for marker in ("nemotron-4", "nemotron_4", "nemotron4")):
-        return ContinuousTokenModelFamily.NEMOTRON4
 
     # --- Existing families ---
     if any(marker in haystack for marker in ("glm-5", "glm_5")) or "glm5" in compact:

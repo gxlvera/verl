@@ -653,116 +653,6 @@ def _tool_call_function_name(tool_call: dict[str, Any]) -> str | None:
 
 
 # =============================================================================
-# New model-family text subclasses
-# =============================================================================
-
-
-class MiMoContinuousTokenBuilder(ContinuousTokenBuilder):
-    """Xiaomi MiMo ChatML boundary handling.
-
-    MiMo uses Qwen2Tokenizer with identical ChatML format. Behavior matches
-    QwenContinuousTokenBuilder (insert newline after <|im_end|>) but is kept
-    as an independent class for structural clarity and future divergence.
-    """
-
-    def __init__(self, tokenizer: Any, **kwargs: Any):
-        super().__init__(tokenizer, **kwargs)
-        newline_ids = tokenizer.encode("\n", add_special_tokens=False)
-        if len(newline_ids) != 1:
-            raise ValueError(f"Expected MiMo newline to tokenize to one token, got {newline_ids!r}")
-        self._newline_id = int(newline_ids[0])
-        self._im_end_id = _require_token_id(tokenizer, "<|im_end|>")
-
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
-        prefix = list(runtime_token_ids)
-        inserted_token_ids: list[int] = []
-        if prefix and prefix[-1] == self._im_end_id:
-            prefix.append(self._newline_id)
-            inserted_token_ids.append(self._newline_id)
-        return MergeResult(
-            token_ids=prefix + list(appended_token_ids),
-            appended_token_count=len(appended_token_ids),
-            kind="non_assistant",
-            inserted_token_ids=inserted_token_ids,
-        )
-
-
-class DeepSeekContinuousTokenBuilder(ContinuousTokenBuilder):
-    """DeepSeek V3/R1 boundary handling.
-
-    DeepSeek uses direct concatenation at boundaries (no separator between
-    <|end_of_sentence|> and the next role marker). The subclass validates
-    the EOS token uses correct Unicode (fullwidth | U+FF5C and lower-eighth
-    block _ U+2581) to catch common encoding bugs early.
-    """
-
-    # DeepSeek special tokens use fullwidth vertical line and lower one-eighth block
-    _EOS_TOKEN = "<\uff5cend\u2581of\u2581sentence\uff5c>"
-
-    def __init__(self, tokenizer: Any, **kwargs: Any):
-        super().__init__(tokenizer, **kwargs)
-        self._eos_id = _require_token_id(tokenizer, self._EOS_TOKEN)
-
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
-        # DeepSeek has no intervening token between EOS and next role marker.
-        # Direct concatenation is correct behavior.
-        merged_token_ids = list(runtime_token_ids) + list(appended_token_ids)
-        return MergeResult(
-            token_ids=merged_token_ids,
-            appended_token_count=len(appended_token_ids),
-            kind="non_assistant",
-        )
-
-
-class KimiContinuousTokenBuilder(ContinuousTokenBuilder):
-    """Kimi (Moonshot) three-part turn boundary handling.
-
-    Kimi uses a unique three-part turn structure:
-        <|im_{role}|>{role_text}<|im_middle|>{content}<|im_end|>
-    with no whitespace/newline between turns. When the runtime prefix ends
-    with <|im_end|>, no separator is inserted (unlike Qwen which needs \\n).
-    """
-
-    def __init__(self, tokenizer: Any, **kwargs: Any):
-        super().__init__(tokenizer, **kwargs)
-        self._im_end_id = _require_token_id(tokenizer, "<|im_end|>")
-
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
-        # Kimi concatenates directly after <|im_end|> — no separator needed.
-        # The next turn's <|im_{role}|> token follows immediately.
-        merged_token_ids = list(runtime_token_ids) + list(appended_token_ids)
-        return MergeResult(
-            token_ids=merged_token_ids,
-            appended_token_count=len(appended_token_ids),
-            kind="non_assistant",
-        )
-
-
-class Nemotron4ContinuousTokenBuilder(ContinuousTokenBuilder):
-    """NVIDIA Nemotron-4 (extra_id style) boundary handling.
-
-    Nemotron-4 uses <extra_id_0> for system and <extra_id_1> for user/assistant/tool
-    role markers. There is no explicit end-of-turn token — turns are implicitly
-    bounded by the next role marker. Direct concatenation is correct.
-    """
-
-    def __init__(self, tokenizer: Any, **kwargs: Any):
-        super().__init__(tokenizer, **kwargs)
-        # Validate the role marker tokens exist
-        self._extra_id_0 = _require_token_id(tokenizer, "<extra_id_0>")
-        self._extra_id_1 = _require_token_id(tokenizer, "<extra_id_1>")
-
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
-        # No end-of-turn delimiter in Nemotron-4; direct concatenation.
-        merged_token_ids = list(runtime_token_ids) + list(appended_token_ids)
-        return MergeResult(
-            token_ids=merged_token_ids,
-            appended_token_count=len(appended_token_ids),
-            kind="non_assistant",
-        )
-
-
-# =============================================================================
 # Multimodal (VL) subclasses — Phase 1
 # =============================================================================
 
@@ -1024,7 +914,7 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         }
 
 
-class MiMoVLContinuousTokenBuilder(MiMoContinuousTokenBuilder):
+class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
     """Xiaomi MiMo-VL continuous token builder.
 
     MiMo-VL uses Qwen2_5_VLForConditionalGeneration with identical vision
