@@ -22,15 +22,12 @@ Without multimodal CT, VL models in agentic rollout must either (a) re-encode th
 ```
 ContinuousTokenBuilder (base)
 ├── QwenContinuousTokenBuilder (text, ChatML boundary: newline after <|im_end|>)
-│   └── QwenVLContinuousTokenBuilder (adds vision rendering + delta slicing)
-├── MiMoContinuousTokenBuilder (text, same ChatML boundary as Qwen)
+│   ├── QwenVLContinuousTokenBuilder (adds vision rendering + delta slicing)
 │   └── MiMoVLContinuousTokenBuilder (adds vision rendering + content flattening)
-├── DeepSeekContinuousTokenBuilder (text, direct concatenation)
-├── KimiContinuousTokenBuilder (text, direct concatenation)
-└── Nemotron4ContinuousTokenBuilder (text, direct concatenation)
+└── (other text builders from PR #6779: MiniMax, GLM, Gemma4, GptOss)
 ```
 
-VL builders **inherit** from their text-only parent, reusing boundary logic while adding vision-specific methods.
+VL builders **inherit** from `QwenContinuousTokenBuilder`, reusing its ChatML boundary logic while adding vision-specific methods.
 
 ### MergeResult Extension
 
@@ -96,15 +93,6 @@ A `_cap_text_prompt_length` safety guard skips truncation for VL builders to avo
 |--------|--------|--------|
 | `qwen25vl` / `qwen3vl` | Qwen2.5-VL-*, Qwen3-VL-* | Verified on H100 |
 | `mimovl` | MiMo-VL-* | Verified on H100 (with template flattening) |
-
-### Text Families (New in this PR)
-
-| Family | Models |
-|--------|--------|
-| `mimo` | MiMo-7B-RL |
-| `deepseek` | DeepSeek-R1, DeepSeek-V3 |
-| `kimi` | Kimi-K2, Moonshot |
-| `nemotron4` | Nemotron-4-* |
 
 ### Future (Phase 2/3)
 
