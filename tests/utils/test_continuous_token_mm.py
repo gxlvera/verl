@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for multimodal MergeResult fields and base class MM hooks."""
+"""Unit tests for multimodal continuous token builders and base class MM hooks."""
 
 import pytest
 
@@ -21,19 +21,16 @@ from verl.utils.continuous_token import (
 )
 
 
-class TestMergeResultMultimodalFields:
-    """Verify new MM fields have correct defaults and work with existing logic."""
+class TestMergeResultTokenFields:
+    """Verify MergeResult stays token-only and works with VL builders."""
 
     def test_default_values_text_only(self):
-        """Text-only MergeResult should have empty/None MM fields."""
         result = MergeResult(token_ids=[1, 2, 3], appended_token_count=2)
-        assert result.pixel_values is None
-        assert result.image_grid_thw == []
-        assert result.image_token_spans == []
-        assert result.mm_processor_kwargs == {}
+        assert result.token_ids == [1, 2, 3]
+        assert result.appended_token_count == 2
+        assert result.kind == "non_assistant"
 
     def test_backward_compat_construction(self):
-        """Old-style construction (no MM kwargs) should still work."""
         result = MergeResult(
             token_ids=[10, 20, 30],
             appended_token_count=1,
@@ -44,32 +41,12 @@ class TestMergeResultMultimodalFields:
         assert result.token_ids == [10, 20, 30]
         assert result.kind == "assistant"
         assert result.inserted_token_ids == [99]
-        assert result.pixel_values is None
-        assert result.image_grid_thw == []
-
-    def test_mm_fields_populated(self):
-        """MergeResult with MM fields set explicitly."""
-        fake_pixels = [[0.1, 0.2, 0.3]]  # Simulate tensor as list for testing
-        result = MergeResult(
-            token_ids=[1, 2, 3, 4, 5, 6, 7, 8],
-            appended_token_count=3,
-            kind="non_assistant",
-            pixel_values=fake_pixels,
-            image_grid_thw=[(1, 4, 4)],
-            image_token_spans=[(2, 6)],
-            mm_processor_kwargs={"min_pixels": 3136},
-        )
-        assert result.pixel_values == fake_pixels
-        assert result.image_grid_thw == [(1, 4, 4)]
-        assert result.image_token_spans == [(2, 6)]
-        assert result.mm_processor_kwargs == {"min_pixels": 3136}
 
     def test_frozen_immutability(self):
         """MergeResult should remain frozen (no assignment after construction)."""
         result = MergeResult(token_ids=[1], appended_token_count=0)
         with pytest.raises(AttributeError):
-            result.pixel_values = "bad"  # type: ignore[misc]
-
+            result.token_ids = [2]  # type: ignore[misc]
 
 
 class TestBaseClassMMHooks:
@@ -126,7 +103,7 @@ class TestMultimodalMergeResultWithExistingSubclasses:
     """Ensure existing text subclass _merge_token_ids still produce valid MergeResult."""
 
     def test_qwen_merge_still_works(self):
-        """QwenContinuousTokenBuilder merge should produce MergeResult with empty MM fields."""
+        """QwenContinuousTokenBuilder merge should produce token-only MergeResult."""
         from verl.utils.continuous_token import QwenContinuousTokenBuilder
 
         class MockQwenTokenizer:
@@ -146,11 +123,6 @@ class TestMultimodalMergeResultWithExistingSubclasses:
         assert result.token_ids == [100, 200, 151645, 198, 10, 20]
         assert result.inserted_token_ids == [198]
         assert result.appended_token_count == 2
-        # MM fields should all be default
-        assert result.pixel_values is None
-        assert result.image_grid_thw == []
-        assert result.image_token_spans == []
-        assert result.mm_processor_kwargs == {}
 
 
 # =============================================================================
@@ -212,9 +184,15 @@ class TestQwenVLContinuousTokenBuilder:
     def test_extract_vision_placeholders_multiple_images(self):
         """Should find multiple vision spans."""
         token_ids = [
-            151652, 151655, 151655, 151653,  # image 1: indices 1-3
-            10, 20,
-            151652, 151655, 151653,  # image 2: indices 7-8
+            151652,
+            151655,
+            151655,
+            151653,  # image 1: indices 1-3
+            10,
+            20,
+            151652,
+            151655,
+            151653,  # image 2: indices 7-8
         ]
         spans = self.builder.extract_vision_placeholders(token_ids)
         assert spans == [(1, 3), (7, 8)]
@@ -449,9 +427,7 @@ class TestQwenVLBuildInitialTokens:
 
         self.tokenizer = _MockQwenVLTokenizer()
         self.processor = _MockQwenVLProcessor()
-        self.builder = QwenVLContinuousTokenBuilder(
-            self.tokenizer, self.processor
-        )
+        self.builder = QwenVLContinuousTokenBuilder(self.tokenizer, self.processor)
 
     def test_build_initial_no_images(self):
         """Without images, should use text-only path."""
@@ -459,10 +435,9 @@ class TestQwenVLBuildInitialTokens:
         token_ids = self.builder.build_initial_tokens(messages)
         assert isinstance(token_ids, list)
         assert all(isinstance(t, int) for t in token_ids)
-        assert self.builder._last_mm_extras == {}
 
     def test_build_initial_with_images(self):
-        """With images, should use processor and store mm_extras."""
+        """With images, should use processor-expanded token IDs."""
         messages = [
             {
                 "role": "user",
@@ -474,12 +449,7 @@ class TestQwenVLBuildInitialTokens:
         ]
         token_ids = self.builder.build_initial_tokens(messages)
         assert isinstance(token_ids, list)
-        # Should have stored mm_extras
-        mm_extras = self.builder._last_mm_extras
-        assert "pixel_values" in mm_extras
-        assert "image_grid_thw" in mm_extras
-        assert len(mm_extras["image_grid_thw"]) == 1
-        assert mm_extras["image_grid_thw"][0] == (1, 4, 4)
+        assert token_ids.count(151655) == 4
 
 
 class TestQwenVLMergeTokens:
@@ -490,9 +460,7 @@ class TestQwenVLMergeTokens:
 
         self.tokenizer = _MockQwenVLTokenizer()
         self.processor = _MockQwenVLProcessor()
-        self.builder = QwenVLContinuousTokenBuilder(
-            self.tokenizer, self.processor
-        )
+        self.builder = QwenVLContinuousTokenBuilder(self.tokenizer, self.processor)
 
     def test_merge_no_new_images(self):
         """Without new images in appended messages, should use text-only merge."""
@@ -504,11 +472,10 @@ class TestQwenVLMergeTokens:
         runtime_ids = [151644, 1000, 1001, 1002, 151645, 151644]
         result = self.builder.merge_tokens(previous, updated, runtime_ids)
         assert isinstance(result, MergeResult)
-        assert result.pixel_values is None
-        assert result.image_grid_thw == []
+        assert result.kind == "non_assistant"
 
     def test_merge_with_new_images(self):
-        """With new images in appended messages, should populate MM fields."""
+        """With new images in appended messages, should merge processor-expanded token IDs."""
         previous = [{"role": "user", "content": "Hi"}]
         updated = [
             {"role": "user", "content": "Hi"},
@@ -524,58 +491,5 @@ class TestQwenVLMergeTokens:
         runtime_ids = [151644, 1000, 1001, 1002, 151645, 151644]
         result = self.builder.merge_tokens(previous, updated, runtime_ids)
         assert isinstance(result, MergeResult)
-        # Should have MM fields populated
-        assert result.pixel_values is not None
-        assert len(result.image_grid_thw) == 1
-        assert result.image_grid_thw[0] == (1, 4, 4)
-
-
-class TestQwenVLSliceMmDelta:
-    """Test _slice_mm_delta logic."""
-
-    def setup_method(self):
-        from verl.utils.continuous_token import QwenVLContinuousTokenBuilder
-
-        self.tokenizer = _MockQwenVLTokenizer()
-        self.processor = _MockQwenVLProcessor()
-        self.builder = QwenVLContinuousTokenBuilder(
-            self.tokenizer, self.processor
-        )
-
-    def test_all_images_new(self):
-        """prev_image_count=0 should return full mm_extras."""
-        import numpy as np
-
-        full_extras = {
-            "pixel_values": np.zeros((32, 3, 14, 14)),
-            "image_grid_thw": [(1, 4, 4), (1, 4, 4)],
-        }
-        delta = self.builder._slice_mm_delta(prev_image_count=0, full_mm_extras=full_extras)
-        assert delta is full_extras
-
-    def test_partial_delta(self):
-        """prev_image_count=1 with 2 total should return only second image."""
-        import numpy as np
-
-        # pixel_values dim0 = raw patches (t*h*w), not merged tokens
-        # grid (1,4,4) -> raw patches = 1*4*4 = 16 per image, total = 32
-        full_extras = {
-            "pixel_values": np.zeros((32, 3, 14, 14)),
-            "image_grid_thw": [(1, 4, 4), (1, 4, 4)],
-        }
-        delta = self.builder._slice_mm_delta(prev_image_count=1, full_mm_extras=full_extras)
-        assert len(delta["image_grid_thw"]) == 1
-        assert delta["image_grid_thw"][0] == (1, 4, 4)
-        # pixel_values sliced at raw patch boundary: 16 patches for second image
-        assert delta["pixel_values"].shape == (16, 3, 14, 14)
-
-    def test_no_new_images(self):
-        """prev_image_count >= total should return empty."""
-        import numpy as np
-
-        full_extras = {
-            "pixel_values": np.zeros((16, 3, 14, 14)),
-            "image_grid_thw": [(1, 4, 4)],
-        }
-        delta = self.builder._slice_mm_delta(prev_image_count=1, full_mm_extras=full_extras)
-        assert delta == {}
+        assert result.kind == "non_assistant"
+        assert 151655 in result.token_ids

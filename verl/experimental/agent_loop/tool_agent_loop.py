@@ -210,11 +210,6 @@ class ToolAgentLoop(AgentLoopBase):
         schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
         if self.enable_continuous_token:
             prompt_ids = await self.ct_build_initial_tokens(agent_data.messages, tools=schemas)
-            mm_extras = getattr(self.continuous_token_builder, "_last_mm_extras", None)
-            if mm_extras and mm_extras.get("pixel_values") is not None:
-                existing = getattr(agent_data, "multi_modal_data", None) or {}
-                existing["images"] = agent_data.image_data
-                agent_data.multi_modal_data = existing
         else:
             prompt_ids = await self.apply_chat_template(
                 agent_data.messages,
@@ -379,8 +374,10 @@ class ToolAgentLoop(AgentLoopBase):
 
         agent_data.messages.extend(add_messages)
 
-        if self.enable_continuous_token and self.continuous_token_builder is not None and (
-            not new_images_this_turn or self.continuous_token_builder.supports_multimodal()
+        if (
+            self.enable_continuous_token
+            and self.continuous_token_builder is not None
+            and (not new_images_this_turn or self.continuous_token_builder.supports_multimodal())
         ):
             schemas = getattr(agent_data, "_active_tool_schemas", self.tool_schemas)
             merge_result, response_mask, response_logprobs = await self.ct_merge_non_assistant_msg(
@@ -398,8 +395,8 @@ class ToolAgentLoop(AgentLoopBase):
             if agent_data.response_logprobs:
                 agent_data.response_logprobs = response_logprobs or []
 
-            # For VL builders, accumulate image_data from merge_result
-            if new_images_this_turn and merge_result.pixel_values is not None:
+            # Keep original image objects for rollout and final multimodal postprocessing.
+            if new_images_this_turn:
                 if agent_data.image_data is None:
                     agent_data.image_data = []
                 elif not isinstance(agent_data.image_data, list):
