@@ -29,6 +29,7 @@ def _chunked_topk_log_probs(
     logits: torch.Tensor,
     topk_ids: torch.Tensor,
     chunk_size: int = 4096,
+    input_temperature: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Compute log_softmax(logits).gather(topk_ids) without materializing [B, T, V].
 
@@ -41,6 +42,9 @@ def _chunked_topk_log_probs(
         logits:    [B, T, V] student logits.
         topk_ids:  [B, T, K] indices to gather.
         chunk_size: number of tokens per chunk; only affects memory, not numerics.
+        input_temperature: optional [B, T, 1] (broadcastable) factor multiplied onto
+            ``logits`` before the softmax. Used to undo the engine's sampling-temperature
+            division so the distillation operates on RAW logits (see ``compute_forward_kl_topk``).
 
     Returns:
         [B, T, K] tensor with the same dtype as `logits`.
@@ -49,6 +53,7 @@ def _chunked_topk_log_probs(
     K = topk_ids.shape[-1]
     flat_logits = logits.reshape(-1, V)  # [N, V]
     flat_topk = topk_ids.reshape(-1, K)  # [N, K]
+    flat_temp = input_temperature.reshape(-1, 1) if input_temperature is not None else None  # [N, 1]
     N = flat_logits.shape[0]
 
     # Edge case: empty input (e.g. fully-padded micro-batch).
@@ -59,6 +64,8 @@ def _chunked_topk_log_probs(
     for s in range(0, N, chunk_size):
         e = min(s + chunk_size, N)
         chunk_logits_fp32 = flat_logits[s:e].float()
+        if flat_temp is not None:
+            chunk_logits_fp32 = chunk_logits_fp32 * flat_temp[s:e].float()
         log_z = torch.logsumexp(chunk_logits_fp32, dim=-1, keepdim=True)  # [c, 1]
         chunk_topk_logits = torch.gather(chunk_logits_fp32, dim=-1, index=flat_topk[s:e])
         out[s:e] = (chunk_topk_logits - log_z).to(logits.dtype)
@@ -91,6 +98,7 @@ def compute_forward_kl_topk(
     teacher_topk_ids: torch.Tensor,
     config: DistillationConfig,
     data_format: str,
+    student_logits_temperature: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute forward KL distillation loss using top-k log probabilities.
 
@@ -99,6 +107,13 @@ def compute_forward_kl_topk(
         teacher_topk_log_probs: (bsz, seqlen, topk).
         teacher_topk_ids: (bsz, seqlen, topk).
         data_format: "thd" or "bshd", models not support THD format, e.g GPT-OSS, Qwen3.5
+        student_logits_temperature: optional (1, seqlen/sp_size, 1) factor that the engine already
+            divided ``student_logits`` by (the rollout/sampling temperature, applied for the policy
+            log-probs in ``transformer_impl.py``). We multiply it back so the distillation target is
+            built from RAW logits and only ``loss_temperature`` shapes it, matching the reference OPSD
+            (siyan-zhao/OPSD), where the distillation temperature is applied once to the raw student
+            logits. Without this undo the student is divided by temperature twice (rollout T, then
+            ``loss_temperature``), softening it relative to the teacher. None == no undo (T_engine=1).
 
     Returns:
     - distillation_losses: (bsz, seqlen/sp_size)
@@ -127,14 +142,21 @@ def compute_forward_kl_topk(
     if use_chunked_topk:
         if loss_temperature is not None:
             raise NotImplementedError("loss_temperature is not supported together with use_chunked_topk.")
-        # log_softmax is monotonic, so topk(logits) == topk(log_softmax(logits)).
+        # log_softmax is monotonic and scale-invariant under a positive per-token factor, so
+        # topk(student_logits) == topk(softmax(student_logits)) regardless of the temperature undo.
         student_topk_ids = torch.topk(student_logits, k=teacher_topk_ids.shape[-1], dim=-1).indices
         student_topk_log_probs = _chunked_topk_log_probs(
             student_logits,
             teacher_topk_ids,
             chunk_size=getattr(loss_config, "chunked_topk_chunk_size", 4096),
+            input_temperature=student_logits_temperature,
         )
     else:
+        # Undo the engine's sampling-temperature division so the distillation sees RAW logits
+        # (see ``student_logits_temperature`` in the docstring). The later loss_temperature path
+        # gathers from ``student_logits``, so reassigning here makes both paths consistent.
+        if student_logits_temperature is not None:
+            student_logits = student_logits * student_logits_temperature
         student_log_probs = F.log_softmax(student_logits, dim=-1)
         student_topk_ids = torch.topk(student_log_probs, k=teacher_topk_ids.shape[-1], dim=-1).indices
         student_topk_log_probs = torch.gather(student_log_probs, dim=-1, index=teacher_topk_ids)

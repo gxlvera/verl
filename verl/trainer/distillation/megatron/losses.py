@@ -267,6 +267,7 @@ def compute_forward_kl_topk(
     teacher_topk_ids: torch.Tensor,
     config: DistillationConfig,
     data_format: str,
+    student_logits_temperature: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute forward KL distillation loss using top-k log probabilities.
 
@@ -275,12 +276,20 @@ def compute_forward_kl_topk(
         teacher_topk_log_probs: (bsz, seqlen, topk).
         teacher_topk_ids: (bsz, seqlen, topk).
         data_format: "thd" or "bshd", models not support THD format, e.g GPT-OSS, Qwen3.5
+        student_logits_temperature: sampling-temperature undo factor (FSDP-only, see the FSDP
+            ``compute_forward_kl_topk``). The Megatron engine path does not supply it, so it is
+            always None here; assert that to fail loudly if that ever changes.
 
     Returns:
     - distillation_losses: (bsz, seqlen/cp_size)
     - student_mass: (bsz, seqlen/cp_size)
     - teacher_mass: (bsz, seqlen/cp_size)
     """
+    if student_logits_temperature is not None:
+        raise NotImplementedError(
+            "student_logits_temperature (sampling-temperature undo) is currently FSDP-only; "
+            "Megatron support is tracked as a follow-up."
+        )
     assert teacher_topk_log_probs.is_nested and teacher_topk_ids.is_nested
 
     # 1. split across cp groups (bsz, seqlen, topk) => (bsz, seqlen/cp_size, topk)
