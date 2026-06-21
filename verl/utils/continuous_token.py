@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal, Sequence
@@ -26,17 +25,22 @@ _SUPPORTED_APPEND_ROLES = frozenset({"tool", "user", "system"})
 _SYNTHETIC_SYSTEM_MESSAGE: dict[str, Any] = {"role": "system", "content": "continuous token synthetic system"}
 _SYNTHETIC_USER_MESSAGE: dict[str, Any] = {"role": "user", "content": "continuous token synthetic user"}
 _ASSISTANT_REASONING_CONTENT: str = "reasoning"
+_DUMMY_TOOL_NAME = "continuous_token_tool"
 MergeKind = Literal["assistant", "non_assistant"]
+
 
 
 @dataclass(frozen=True)
 class MergeResult:
-    """Token merge result with the token-level delta needed by callers.
+    """Merged runtime tokens plus the edits callers need to align metadata.
 
-    ``inserted_token_ids`` are CT-created boundary tokens at the merge junction.
-    They are not model-generated tokens and therefore must not carry loss or
-    model logprobs. Generated assistant tokens are represented by
-    ``appended_token_count`` with ``kind="assistant"``.
+    ``token_ids`` is the updated runtime token stream. The other fields describe
+    how the stream changed at the merge junction: ``inserted_token_ids`` are
+    CT-created boundary tokens, ``appended_token_count`` counts newly appended
+    assistant or non-assistant tokens excluding those inserted boundary tokens,
+    and ``removed_prefix_token_count`` counts stale prefix tokens dropped before
+    appending. Boundary tokens are not model-generated and therefore must not
+    carry loss or model logprobs.
     """
 
     token_ids: list[int]
@@ -63,58 +67,6 @@ class MergeResult:
     Empty dict when unused."""
 
 
-def ct_align_response_metadata(
-    merge_result: MergeResult,
-    response_mask: list[int],
-    response_logprobs: list[float] | None = None,
-    *,
-    assistant_logprobs: list[float] | None = None,
-) -> tuple[list[int], list[float] | None]:
-    """Align response masks and logprobs after a Continuous Token merge.
-
-    ``MergeResult`` describes token edits at the runtime-prefix boundary. This
-    helper mirrors those edits for response-side metadata so downstream agent
-    loops can reuse Continuous Token without depending on ``AgentLoopBase``.
-    """
-    aligned_mask = list(response_mask)
-    aligned_logprobs = list(response_logprobs) if response_logprobs is not None else None
-    if aligned_logprobs is None and assistant_logprobs is not None:
-        raise ValueError("response_logprobs is required when assistant_logprobs is provided")
-
-    if merge_result.removed_prefix_token_count:
-        aligned_mask = aligned_mask[: -merge_result.removed_prefix_token_count]
-        if aligned_logprobs is not None:
-            aligned_logprobs = aligned_logprobs[: -merge_result.removed_prefix_token_count]
-
-    # Inserted tokens are CT-created boundary tokens, not model-generated tokens.
-    inserted_token_count = len(merge_result.inserted_token_ids)
-    aligned_mask += [0] * inserted_token_count
-    if aligned_logprobs is not None:
-        aligned_logprobs += [0.0] * inserted_token_count
-
-    if merge_result.kind == "assistant":
-        aligned_mask += [1] * merge_result.appended_token_count
-        if aligned_logprobs is not None:
-            if assistant_logprobs is None:
-                if merge_result.appended_token_count:
-                    raise ValueError("assistant_logprobs is required for assistant Continuous Token alignment")
-                assistant_logprobs = []
-            if len(assistant_logprobs) != merge_result.appended_token_count:
-                raise ValueError(
-                    "assistant_logprobs length must match appended assistant token count, "
-                    f"got {len(assistant_logprobs)} and {merge_result.appended_token_count}"
-                )
-            aligned_logprobs += list(assistant_logprobs)
-    elif merge_result.kind == "non_assistant":
-        aligned_mask += [0] * merge_result.appended_token_count
-        if aligned_logprobs is not None:
-            aligned_logprobs += [0.0] * merge_result.appended_token_count
-    else:
-        raise ValueError(f"Unknown Continuous Token merge kind: {merge_result.kind!r}")
-
-    return aligned_mask, aligned_logprobs
-
-
 class ContinuousTokenBuilder:
     """Continuous Token builder for runtime prefix reuse."""
 
@@ -136,21 +88,6 @@ class ContinuousTokenBuilder:
                 raise ValueError(f"Unsupported Continuous Token append roles: {sorted(unknown_roles)}")
             self.allowed_append_roles = allowed_roles
 
-    @staticmethod
-    def align_response_metadata(
-        merge_result: MergeResult,
-        response_mask: list[int],
-        response_logprobs: list[float] | None = None,
-        *,
-        assistant_logprobs: list[float] | None = None,
-    ) -> tuple[list[int], list[float] | None]:
-        return ct_align_response_metadata(
-            merge_result,
-            response_mask,
-            response_logprobs,
-            assistant_logprobs=assistant_logprobs,
-        )
-
     def build_initial_tokens(
         self,
         messages: list[dict[str, Any]],
@@ -159,7 +96,7 @@ class ContinuousTokenBuilder:
     ) -> list[int]:
         return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
 
-    def tokenize_incremental_messages(
+    def tokenize_non_assistant_incremental_messages(
         self,
         previous_messages: list[dict[str, Any]],
         updated_messages: list[dict[str, Any]],
@@ -168,8 +105,9 @@ class ContinuousTokenBuilder:
     ) -> list[int]:
         self._assert_append_only(previous_messages, updated_messages)
         appended_messages = updated_messages[len(previous_messages) :]
+        if not appended_messages:
+            return []
         incremental_ids: list[int] = []
-        processed_messages: list[dict[str, Any]] = []
 
         for group in self._iter_append_groups(appended_messages):
             role = group[0].get("role")
@@ -177,23 +115,24 @@ class ContinuousTokenBuilder:
                 incremental_ids.extend(
                     self._tokenize_tool_group(
                         group,
-                        context_messages=previous_messages + processed_messages,
+                        previous_messages=previous_messages,
                         tools=tools,
                     )
                 )
             elif role in {"user", "system"}:
                 # System appends can represent retry/control messages; unsupported templates will fail in suffix diff.
+                if len(group) != 1:
+                    raise ValueError(
+                        f"Continuous Token expects one {role!r} message per append group, got {len(group)}"
+                    )
                 incremental_ids.extend(self._tokenize_single_non_tool(group[0], tools=tools))
             else:
                 raise ValueError(f"Unsupported Continuous Token append role: {role!r}")
-            processed_messages.extend(group)
 
-        incremental_ids.extend(
-            self.render_delta_token_id(updated_messages, [], add_generation_prompt=True, tools=tools)
-        )
+        incremental_ids.extend(self._tokenize_generation_prompt_delta(updated_messages, tools=tools))
         return incremental_ids
 
-    def merge_tokens(
+    def merge_non_assistant_tokens(
         self,
         previous_messages: list[dict[str, Any]],
         updated_messages: list[dict[str, Any]],
@@ -201,11 +140,13 @@ class ContinuousTokenBuilder:
         *,
         tools: list[dict[str, Any]] | None = None,
     ) -> MergeResult:
-        appended_ids = self.tokenize_incremental_messages(previous_messages, updated_messages, tools=tools)
-        return self._merge_token_ids(runtime_token_ids, appended_ids)
+        appended_ids = self.tokenize_non_assistant_incremental_messages(
+            previous_messages, updated_messages, tools=tools
+        )
+        return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
-    def append_assistant_tokens(self, runtime_token_ids: list[int], assistant_token_ids: list[int]) -> MergeResult:
-        """Append model-generated assistant tokens to the runtime token stream."""
+    def merge_assistant_tokens(self, runtime_token_ids: list[int], assistant_token_ids: list[int]) -> MergeResult:
+        """Merge model-generated assistant tokens into the runtime token stream."""
         merged_token_ids = list(runtime_token_ids) + list(assistant_token_ids)
         return MergeResult(
             token_ids=merged_token_ids,
@@ -213,8 +154,10 @@ class ContinuousTokenBuilder:
             kind="assistant",
         )
 
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
-        """Merge runtime prefix tokens and appended tokens.
+    def _merge_non_assistant_token_ids(
+        self, runtime_token_ids: list[int], appended_token_ids: list[int]
+    ) -> MergeResult:
+        """Merge runtime prefix tokens and appended non-assistant tokens.
 
         Model-specific builders usually override this hook for boundary handling,
         such as inserting or trimming tokens at the prefix/appended-token junction.
@@ -270,10 +213,10 @@ class ContinuousTokenBuilder:
         self,
         tool_messages: list[dict[str, Any]],
         *,
-        context_messages: list[dict[str, Any]] | None = None,
+        previous_messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
-        synthetic_assistant = self._synthetic_assistant_for_tools(tool_messages, context_messages=context_messages)
+        synthetic_assistant = self._synthetic_assistant_for_tools(tool_messages)
         return self.render_delta_token_id(
             [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE, synthetic_assistant],
             tool_messages,
@@ -291,6 +234,15 @@ class ContinuousTokenBuilder:
             [message],
             tools=tools,
         )
+
+    def _tokenize_generation_prompt_delta(
+        self,
+        updated_messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[int]:
+        """Tokenize the tokens added only by ``add_generation_prompt=True``."""
+        return self.render_delta_token_id(updated_messages, [], add_generation_prompt=True, tools=tools)
 
     def _iter_append_groups(self, appended_messages: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
         groups: list[list[dict[str, Any]]] = []
@@ -327,21 +279,17 @@ class ContinuousTokenBuilder:
     def _synthetic_assistant_for_tools(
         self,
         tool_messages: list[dict[str, Any]],
-        *,
-        context_messages: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        tool_names_by_id, positional_tool_names = _assistant_tool_call_names(context_messages or [])
         tool_calls = []
         for index, tool_message in enumerate(tool_messages):
             tool_call = {
+                "id": _tool_call_id_or_dummy(tool_message, index),
                 "type": "function",
                 "function": {
-                    "name": _resolve_tool_name(tool_message, index, tool_names_by_id, positional_tool_names),
+                    "name": _tool_message_name_or_dummy(tool_message),
                     "arguments": {},
                 },
             }
-            if tool_message.get("tool_call_id") is not None:
-                tool_call["id"] = tool_message["tool_call_id"]
             tool_calls.append(tool_call)
         return {
             "role": "assistant",
@@ -349,6 +297,62 @@ class ContinuousTokenBuilder:
             "reasoning_content": _ASSISTANT_REASONING_CONTENT,
             "tool_calls": tool_calls,
         }
+
+    def align_response_metadata(
+        self,
+        merge_result: MergeResult,
+        response_mask: list[int],
+        response_logprobs: list[float] | None = None,
+        *,
+        assistant_logprobs: list[float] | None = None,
+    ) -> tuple[list[int], list[float] | None]:
+        """Align response masks and logprobs after a Continuous Token merge.
+
+        ``MergeResult`` records token edits at the runtime-prefix boundary. This
+        method applies the same edits to response-side metadata: trimming
+        metadata for removed prefix tokens, assigning zero mask/logprob to
+        inserted boundary or non-assistant tokens, and assigning assistant
+        mask/logprobs to appended assistant tokens.
+        """
+        aligned_mask = list(response_mask)
+        aligned_logprobs = list(response_logprobs) if response_logprobs is not None else None
+        if aligned_logprobs is None and assistant_logprobs is not None:
+            raise ValueError("response_logprobs is required when assistant_logprobs is provided")
+
+        # If merge trimmed tokens from the current prefix, trim their metadata too.
+        if merge_result.removed_prefix_token_count:
+            aligned_mask = aligned_mask[: -merge_result.removed_prefix_token_count]
+            if aligned_logprobs is not None:
+                aligned_logprobs = aligned_logprobs[: -merge_result.removed_prefix_token_count]
+
+        # Boundary tokens are added by CT itself, so they get mask/logprob 0.
+        inserted_token_count = len(merge_result.inserted_token_ids)
+        aligned_mask += [0] * inserted_token_count
+        if aligned_logprobs is not None:
+            aligned_logprobs += [0.0] * inserted_token_count
+
+        # Assistant tokens get mask 1 and their logprobs; tool/user/system tokens get mask/logprob 0.
+        if merge_result.kind == "assistant":
+            aligned_mask += [1] * merge_result.appended_token_count
+            if aligned_logprobs is not None:
+                if assistant_logprobs is None:
+                    if merge_result.appended_token_count:
+                        raise ValueError("assistant_logprobs is required for assistant Continuous Token alignment")
+                    assistant_logprobs = []
+                if len(assistant_logprobs) != merge_result.appended_token_count:
+                    raise ValueError(
+                        "assistant_logprobs length must match appended assistant token count, "
+                        f"got {len(assistant_logprobs)} and {merge_result.appended_token_count}"
+                    )
+                aligned_logprobs += list(assistant_logprobs)
+        elif merge_result.kind == "non_assistant":
+            aligned_mask += [0] * merge_result.appended_token_count
+            if aligned_logprobs is not None:
+                aligned_logprobs += [0.0] * merge_result.appended_token_count
+        else:
+            raise ValueError(f"Unknown Continuous Token merge kind: {merge_result.kind!r}")
+
+        return aligned_mask, aligned_logprobs
 
 
     # === Multimodal hooks (VL subclasses override these) ===
@@ -437,15 +441,19 @@ class GptOssContinuousTokenBuilder(ContinuousTokenBuilder):
         self,
         tool_messages: list[dict[str, Any]],
         *,
-        context_messages: list[dict[str, Any]] | None = None,
+        previous_messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
         del tools
-        tool_names_by_id, positional_tool_names = _assistant_tool_call_names(context_messages or [])
         response_text = "".join(
             self._format_tool_response(
                 tool_message,
-                _resolve_tool_name(tool_message, index, tool_names_by_id, positional_tool_names),
+                _resolve_required_tool_name(
+                    tool_message,
+                    index,
+                    tool_messages,
+                    previous_messages,
+                ),
             )
             for index, tool_message in enumerate(tool_messages)
         )
@@ -453,7 +461,7 @@ class GptOssContinuousTokenBuilder(ContinuousTokenBuilder):
 
     @staticmethod
     def _format_tool_response(tool_message: dict[str, Any], tool_name: str) -> str:
-        content = json.dumps(_stringify_tool_content(tool_message.get("content", "")), ensure_ascii=False)
+        content = _stringify_tool_content(tool_message.get("content", ""))
         return f"<|start|>functions.{tool_name} to=assistant<|channel|>commentary<|message|>{content}<|end|>"
 
 
@@ -473,7 +481,9 @@ class QwenContinuousTokenBuilder(ContinuousTokenBuilder):
         self._newline_id = int(newline_ids[0])
         self._im_end_id = _require_token_id(tokenizer, "<|im_end|>")
 
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+    def _merge_non_assistant_token_ids(
+        self, runtime_token_ids: list[int], appended_token_ids: list[int]
+    ) -> MergeResult:
         prefix = list(runtime_token_ids)
         inserted_token_ids: list[int] = []
         if prefix and prefix[-1] == self._im_end_id:
@@ -503,7 +513,9 @@ class MiniMaxContinuousTokenBuilder(ContinuousTokenBuilder):
         self._newline_id = int(newline_ids[0])
         self._eos_id = _require_token_id(tokenizer, "[e~[")
 
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+    def _merge_non_assistant_token_ids(
+        self, runtime_token_ids: list[int], appended_token_ids: list[int]
+    ) -> MergeResult:
         prefix = list(runtime_token_ids)
         inserted_token_ids: list[int] = []
         if prefix and prefix[-1] == self._eos_id:
@@ -531,7 +543,9 @@ class GLMContinuousTokenBuilder(ContinuousTokenBuilder):
         self._user_id = _require_token_id(tokenizer, "<|user|>")
         self._ambiguous_boundary_ids = {self._observation_id, self._user_id}
 
-    def _merge_token_ids(self, runtime_token_ids: list[int], appended_token_ids: list[int]) -> MergeResult:
+    def _merge_non_assistant_token_ids(
+        self, runtime_token_ids: list[int], appended_token_ids: list[int]
+    ) -> MergeResult:
         prefix = list(runtime_token_ids)
         removed_prefix_token_count = 0
         if prefix and prefix[-1] in self._ambiguous_boundary_ids:
@@ -552,7 +566,50 @@ class Gemma4ContinuousTokenBuilder(ContinuousTokenBuilder):
         super().__init__(tokenizer, **kwargs)
         self._tool_response_id = _require_token_id(tokenizer, "<|tool_response>")
 
-    def merge_tokens(
+    def _tokenize_tool_group(
+        self,
+        tool_messages: list[dict[str, Any]],
+        *,
+        previous_messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[int]:
+        del tools
+        response_text = "".join(
+            self._format_tool_response(
+                tool_message,
+                _resolve_required_tool_name(
+                    tool_message,
+                    index,
+                    tool_messages,
+                    previous_messages,
+                ),
+            )
+            for index, tool_message in enumerate(tool_messages)
+        )
+        return self.tokenizer.encode(response_text, add_special_tokens=False)
+
+    @staticmethod
+    def _format_tool_response(tool_message: dict[str, Any], tool_name: str) -> str:
+        content = _stringify_tool_content(tool_message.get("content", ""))
+        return f'<|tool_response>response:{tool_name}{{value:<|"|>{content}<|"|>}}<tool_response|>'
+
+    def _tokenize_generation_prompt_delta(
+        self,
+        updated_messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> list[int]:
+        last_message = updated_messages[-1]
+        if last_message.get("role") not in {"user", "system"}:
+            return []
+        return self.render_delta_token_id(
+            [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE, last_message],
+            [],
+            add_generation_prompt=True,
+            tools=tools,
+        )
+
+    def merge_non_assistant_tokens(
         self,
         previous_messages: list[dict[str, Any]],
         updated_messages: list[dict[str, Any]],
@@ -560,7 +617,9 @@ class Gemma4ContinuousTokenBuilder(ContinuousTokenBuilder):
         *,
         tools: list[dict[str, Any]] | None = None,
     ) -> MergeResult:
-        appended_token_ids = self.tokenize_incremental_messages(previous_messages, updated_messages, tools=tools)
+        appended_token_ids = self.tokenize_non_assistant_incremental_messages(
+            previous_messages, updated_messages, tools=tools
+        )
         appended_messages = updated_messages[len(previous_messages) :]
 
         prefix = list(runtime_token_ids)
@@ -602,47 +661,77 @@ def _stringify_tool_content(content: Any) -> str:
     return str(content)
 
 
-def _assistant_tool_call_names(
+def _tool_message_name_or_dummy(tool_message: dict[str, Any]) -> str:
+    if tool_message.get("name"):
+        return str(tool_message["name"])
+    return _DUMMY_TOOL_NAME
+
+
+def _tool_call_id_or_dummy(tool_message: dict[str, Any], index: int) -> Any:
+    if tool_message.get("tool_call_id") is not None:
+        return tool_message["tool_call_id"]
+    return f"continuous_token_call_{index}"
+
+
+def _latest_assistant_tool_call_names(
     messages: list[dict[str, Any]],
-) -> tuple[dict[str, str], list[str]]:
+) -> tuple[dict[str, str], list[str | None]]:
     tool_names_by_id: dict[str, str] = {}
-    positional_tool_names: list[str] = []
     for message in reversed(messages):
         if message.get("role") != "assistant":
             continue
         tool_calls = message.get("tool_calls") or []
         if not isinstance(tool_calls, list):
-            continue
-        names: list[str] = []
+            return tool_names_by_id, []
+        positional_tool_names: list[str | None] = []
         for tool_call in tool_calls:
             if not isinstance(tool_call, dict):
+                positional_tool_names.append(None)
                 continue
             name = _tool_call_function_name(tool_call)
-            if name is None:
-                continue
-            names.append(name)
+            positional_tool_names.append(name)
             tool_call_id = tool_call.get("id")
-            if tool_call_id is not None:
+            if name is not None and tool_call_id is not None:
                 tool_names_by_id.setdefault(str(tool_call_id), name)
-        if names and not positional_tool_names:
-            positional_tool_names = names
-    return tool_names_by_id, positional_tool_names
+        return tool_names_by_id, positional_tool_names
+    return tool_names_by_id, []
 
 
-def _resolve_tool_name(
+def _resolve_required_tool_name(
     tool_message: dict[str, Any],
     index: int,
-    tool_names_by_id: dict[str, str],
-    positional_tool_names: list[str],
+    tool_messages: list[dict[str, Any]],
+    previous_messages: list[dict[str, Any]],
 ) -> str:
+    if tool_message.get("name"):
+        return str(tool_message["name"])
+
+    tool_names_by_id, positional_tool_names = _latest_assistant_tool_call_names(previous_messages)
     tool_call_id = tool_message.get("tool_call_id")
     if tool_call_id is not None and str(tool_call_id) in tool_names_by_id:
         return tool_names_by_id[str(tool_call_id)]
-    if index < len(positional_tool_names):
-        return positional_tool_names[index]
-    if tool_message.get("name"):
-        return str(tool_message["name"])
-    return "continuous_token_tool"
+
+    if len(tool_messages) != len(positional_tool_names):
+        raise ValueError(
+            "Continuous Token cannot resolve tool name by position: "
+            f"got {len(tool_messages)} tool response messages but the latest assistant has "
+            f"{len(positional_tool_names)} tool calls"
+        )
+    if index >= len(positional_tool_names) or positional_tool_names[index] is None:
+        raise ValueError(
+            "Continuous Token cannot resolve tool name by position: "
+            f"assistant tool call at index {index} has no function name"
+        )
+
+    # ToolAgentLoop uses asyncio.gather and appends responses in the original
+    # tool-call order, so positional matching is safe for its full response
+    # batches. Black-box agent loops may return responses in another order; they
+    # must provide tool message name or tool_call_id instead of relying on this.
+    logger.warning(
+        "Continuous Token is resolving a tool response name by position; this is only safe when "
+        "tool responses are appended in the same order as the latest assistant tool_calls"
+    )
+    return positional_tool_names[index]
 
 
 def _tool_call_function_name(tool_call: dict[str, Any]) -> str | None:
@@ -866,10 +955,10 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
 
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
                 previous_messages, updated_messages, tools=tools
             )
-            result = self._merge_token_ids(runtime_token_ids, appended_ids)
+            result = self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
             return result
 
         # Single processor call: synthetic prefix + appended messages with new images
@@ -877,7 +966,7 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
             appended_messages, new_images, tools=tools
         )
 
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+        merge_result = self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
 
         prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
@@ -1171,16 +1260,16 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
 
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
                 previous_messages, updated_messages, tools=tools
             )
-            return self._merge_token_ids(runtime_token_ids, appended_ids)
+            return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
         appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
             appended_messages, new_images, tools=tools
         )
 
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+        merge_result = self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
         prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]
@@ -1406,16 +1495,16 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
         appended_messages = updated_messages[len(previous_messages):]
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
                 previous_messages, updated_messages, tools=tools,
             )
-            return self._merge_token_ids(runtime_token_ids, appended_ids)
+            return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
         appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
             appended_messages, new_images, tools=tools,
         )
 
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+        merge_result = self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
         prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]
@@ -1627,17 +1716,17 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
         self._assert_append_only(previous_messages, updated_messages)
         new_images = self._extract_images_from_messages(updated_messages[len(previous_messages):])
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
                 previous_messages, updated_messages, tools=tools,
             )
-            return self._merge_token_ids(runtime_token_ids, appended_ids)
+            return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
         appended_messages = updated_messages[len(previous_messages):]
         appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
             appended_messages, new_images, tools=tools,
         )
 
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
+        merge_result = self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
         prev_images = self._extract_images_from_messages(previous_messages)
         all_spans = self.extract_vision_placeholders(merge_result.token_ids)
         image_token_spans = all_spans[len(prev_images):]

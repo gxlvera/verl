@@ -18,7 +18,6 @@ import pytest
 from verl.utils.continuous_token import (
     ContinuousTokenBuilder,
     MergeResult,
-    ct_align_response_metadata,
 )
 
 
@@ -71,25 +70,6 @@ class TestMergeResultMultimodalFields:
         with pytest.raises(AttributeError):
             result.pixel_values = "bad"  # type: ignore[misc]
 
-    def test_align_response_metadata_ignores_mm_fields(self):
-        """ct_align_response_metadata should work unchanged with MM fields present."""
-        result = MergeResult(
-            token_ids=[1, 2, 3, 4, 5],
-            appended_token_count=2,
-            kind="non_assistant",
-            inserted_token_ids=[99],
-            pixel_values="fake_tensor",
-            image_grid_thw=[(1, 2, 2)],
-            image_token_spans=[(1, 3)],
-        )
-        mask = [1, 1, 1]
-        logprobs = [0.5, 0.6, 0.7]
-        aligned_mask, aligned_logprobs = ct_align_response_metadata(
-            result, mask, logprobs
-        )
-        # 1 inserted token (mask=0, logprob=0.0) + 2 non_assistant (mask=0, logprob=0.0)
-        assert aligned_mask == [1, 1, 1, 0, 0, 0]
-        assert aligned_logprobs == [0.5, 0.6, 0.7, 0.0, 0.0, 0.0]
 
 
 class TestBaseClassMMHooks:
@@ -162,7 +142,7 @@ class TestMultimodalMergeResultWithExistingSubclasses:
 
         builder = QwenContinuousTokenBuilder(MockQwenTokenizer())
         # Simulate: prefix ends with <|im_end|>, appended is [10, 20]
-        result = builder._merge_token_ids([100, 200, 151645], [10, 20])
+        result = builder._merge_non_assistant_token_ids([100, 200, 151645], [10, 20])
         assert result.token_ids == [100, 200, 151645, 198, 10, 20]
         assert result.inserted_token_ids == [198]
         assert result.appended_token_count == 2
@@ -247,7 +227,7 @@ class TestQwenVLContinuousTokenBuilder:
 
     def test_merge_inherits_qwen_newline_patch(self):
         """VL builder should still insert newline after im_end (from QwenBuilder)."""
-        result = self.builder._merge_token_ids([100, 151645], [10, 20])
+        result = self.builder._merge_non_assistant_token_ids([100, 151645], [10, 20])
         assert result.token_ids == [100, 151645, 198, 10, 20]
         assert result.inserted_token_ids == [198]
 
@@ -297,7 +277,7 @@ class TestMiMoVLContinuousTokenBuilder:
 
     def test_merge_inherits_mimo_newline_patch(self):
         """MiMo-VL should still insert newline after im_end (from MiMoBuilder)."""
-        result = self.builder._merge_token_ids([100, 151645], [10, 20])
+        result = self.builder._merge_non_assistant_token_ids([100, 151645], [10, 20])
         assert result.token_ids == [100, 151645, 198, 10, 20]
         assert result.inserted_token_ids == [198]
 
