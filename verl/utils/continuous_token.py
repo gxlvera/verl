@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal, Sequence
@@ -28,8 +27,6 @@ _SYNTHETIC_USER_MESSAGE: dict[str, Any] = {"role": "user", "content": "continuou
 _ASSISTANT_REASONING_CONTENT: str = "reasoning"
 _DUMMY_TOOL_NAME = "continuous_token_tool"
 MergeKind = Literal["assistant", "non_assistant"]
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,23 +47,6 @@ class MergeResult:
     kind: MergeKind = "non_assistant"
     inserted_token_ids: list[int] = field(default_factory=list)
     removed_prefix_token_count: int = 0
-
-    # --- Multimodal fields (added for VL continuous token support) ---
-    pixel_values: Any = None
-    """Preprocessed pixel tensor(s) for all images in the merged sequence.
-    Shape is model-dependent. None when text-only or images unchanged."""
-
-    image_grid_thw: list[tuple[int, int, int]] = field(default_factory=list)
-    """Per-image (temporal, height_grid, width_grid) after processor rescaling.
-    Empty list when text-only. Length equals number of images in merged sequence."""
-
-    image_token_spans: list[tuple[int, int]] = field(default_factory=list)
-    """(start, end) half-open index pairs locating each image's pad tokens in
-    token_ids. Empty list when text-only. Length == len(image_grid_thw)."""
-
-    mm_processor_kwargs: dict[str, Any] = field(default_factory=dict)
-    """Extra kwargs for the processor / rollout engine (e.g. min_pixels).
-    Empty dict when unused."""
 
 
 class ContinuousTokenBuilder:
@@ -356,7 +336,6 @@ class ContinuousTokenBuilder:
 
         return aligned_mask, aligned_logprobs
 
-
     # === Multimodal hooks (VL subclasses override these) ===
 
     @classmethod
@@ -398,9 +377,7 @@ class ContinuousTokenBuilder:
         Raises:
             NotImplementedError: Unless overridden by a VL subclass.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement extract_vision_placeholders."
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement extract_vision_placeholders.")
 
     def render_tokens_with_mm(
         self,
@@ -409,12 +386,12 @@ class ContinuousTokenBuilder:
         *,
         add_generation_prompt: bool = True,
         mm_processor_kwargs: dict[str, Any] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render messages with images through the processor.
 
         Unlike ``_render_tokens`` which uses only the tokenizer, this method
-        invokes the full multimodal processor to produce both token IDs and
-        pixel tensors.
+        invokes the full multimodal processor so image placeholders are expanded
+        into the same token IDs the rollout backend will consume.
 
         Args:
             messages: OpenAI-format message list with image content items.
@@ -423,17 +400,14 @@ class ContinuousTokenBuilder:
             mm_processor_kwargs: Extra kwargs for the processor (min/max pixels).
 
         Returns:
-            (token_ids, mm_extras) where mm_extras contains at minimum:
-                - "pixel_values": processed pixel tensor
-                - "image_grid_thw": list of (t, h, w) tuples per image
-            Additional model-specific keys may be present.
+            Token IDs rendered by the multimodal processor. Pixel tensors are
+            intentionally not returned here; final multimodal tensors are built
+            from the full image list during agent-loop postprocessing.
 
         Raises:
             NotImplementedError: Unless overridden by a VL subclass.
         """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement render_tokens_with_mm."
-        )
+        raise NotImplementedError(f"{type(self).__name__} does not implement render_tokens_with_mm.")
 
 
 class GptOssContinuousTokenBuilder(ContinuousTokenBuilder):
@@ -812,7 +786,7 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         add_generation_prompt: bool = True,
         mm_processor_kwargs: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render messages through the Qwen VL processor."""
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
@@ -837,21 +811,7 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
             mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
         )
 
-        token_ids = normalize_token_ids(processor_output["input_ids"])
-
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-        if proc_kwargs:
-            mm_extras["mm_processor_kwargs"] = proc_kwargs
-
-        return token_ids, mm_extras
+        return normalize_token_ids(processor_output["input_ids"])
 
     def _extract_images_from_messages(self, messages: list[dict[str, Any]]) -> list[Any]:
         """Extract image references from message content blocks."""
@@ -878,22 +838,12 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         *,
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
-        """Build initial tokens with multimodal processor support.
-
-        Stores mm_extras in self._last_mm_extras for caller retrieval.
-        Falls back to text-only rendering if no images are present.
-        """
+        """Build initial tokens with multimodal processor support."""
         images = self._extract_images_from_messages(messages)
         if not images:
-            # No images — use text-only path (inherited from base)
-            self._last_mm_extras: dict[str, Any] = {}
             return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
 
-        token_ids, mm_extras = self.render_tokens_with_mm(
-            messages, images, add_generation_prompt=True, tools=tools
-        )
-        self._last_mm_extras = mm_extras
-        return token_ids
+        return self.render_tokens_with_mm(messages, images, add_generation_prompt=True, tools=tools)
 
     def _render_incremental_with_mm(
         self,
@@ -901,7 +851,7 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         images: list[Any],
         *,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render incremental messages via synthetic prefix + trim (single processor call)."""
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
@@ -912,31 +862,29 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
 
         prefix_msgs = [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE]
         prefix_text = apply_chat_template(
-            self.tokenizer, prefix_msgs, tokenize=False, add_generation_prompt=False, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs,
+            tokenize=False,
+            add_generation_prompt=False,
+            **template_kwargs,
         )
         trim_length = len(self.tokenizer.encode(prefix_text, add_special_tokens=False))
 
         full_text = apply_chat_template(
-            self.tokenizer, prefix_msgs + messages, tokenize=False, add_generation_prompt=True, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs + messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=full_text, images=images if images else None,
+            self.processor,
+            text=full_text,
+            images=images if images else None,
         )
 
         all_ids = normalize_token_ids(processor_output["input_ids"])
-        appended_ids = list(all_ids[trim_length:])
-
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-
-        return appended_ids, mm_extras
+        return list(all_ids[trim_length:])
 
     def merge_tokens(
         self,
@@ -949,87 +897,23 @@ class QwenVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         """Merge tokens with multimodal awareness.
 
         If new images appear, uses a single processor call with a synthetic
-        prefix (dummy+trim pattern) to obtain both incremental token_ids and
-        pixel_values without re-processing old images.
+        prefix (dummy+trim pattern) to obtain incremental token_ids without
+        re-processing old images.
         """
         self._assert_append_only(previous_messages, updated_messages)
-        appended_messages = updated_messages[len(previous_messages):]
+        appended_messages = updated_messages[len(previous_messages) :]
 
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
                 previous_messages, updated_messages, tools=tools
             )
-            result = self._merge_token_ids(runtime_token_ids, appended_ids)
+            result = self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
             return result
 
         # Single processor call: synthetic prefix + appended messages with new images
-        appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
-            appended_messages, new_images, tools=tools
-        )
-
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
-
-        prev_images = self._extract_images_from_messages(previous_messages)
-        all_spans = self.extract_vision_placeholders(merge_result.token_ids)
-        image_token_spans = all_spans[len(prev_images):]
-
-        return MergeResult(
-            token_ids=merge_result.token_ids,
-            appended_token_count=merge_result.appended_token_count,
-            kind=merge_result.kind,
-            inserted_token_ids=merge_result.inserted_token_ids,
-            removed_prefix_token_count=merge_result.removed_prefix_token_count,
-            pixel_values=delta_mm_extras.get("pixel_values"),
-            image_grid_thw=delta_mm_extras.get("image_grid_thw", []),
-            image_token_spans=image_token_spans,
-            mm_processor_kwargs=delta_mm_extras.get("mm_processor_kwargs", {}),
-        )
-
-    def _slice_mm_delta(
-        self,
-        prev_image_count: int,
-        full_mm_extras: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Slice full mm_extras to only include new (delta) images.
-
-        Uses image_grid_thw length to determine image boundaries in pixel_values.
-        """
-        grid_thw = full_mm_extras.get("image_grid_thw", [])
-        pixel_values = full_mm_extras.get("pixel_values")
-
-        if prev_image_count == 0:
-            # All images are new
-            return full_mm_extras
-
-        if prev_image_count >= len(grid_thw):
-            # No new images in mm_extras (shouldn't happen if we got here)
-            return {}
-
-        # Slice grid_thw
-        delta_grid_thw = grid_thw[prev_image_count:]
-
-        # Slice pixel_values: dim0 is raw patches (t*h*w), NOT merged tokens
-        if pixel_values is not None:
-            prev_patch_count = sum(
-                row[0] * row[1] * row[2] for row in grid_thw[:prev_image_count]
-            )
-            if hasattr(pixel_values, "__getitem__"):
-                delta_pixel_values = pixel_values[prev_patch_count:]
-            else:
-                logger.warning(
-                    "pixel_values type %s does not support slicing; delta will be None",
-                    type(pixel_values).__name__,
-                )
-                delta_pixel_values = None
-        else:
-            delta_pixel_values = None
-
-        return {
-            "pixel_values": delta_pixel_values,
-            "image_grid_thw": delta_grid_thw,
-            "mm_processor_kwargs": full_mm_extras.get("mm_processor_kwargs", {}),
-        }
+        appended_token_ids = self._render_incremental_with_mm(appended_messages, new_images, tools=tools)
+        return self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
 
 
 class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
@@ -1093,7 +977,7 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         add_generation_prompt: bool = True,
         mm_processor_kwargs: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render messages through the MiMo-VL processor (Qwen2.5-VL compatible)."""
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
@@ -1119,21 +1003,7 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
             mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
         )
 
-        token_ids = normalize_token_ids(processor_output["input_ids"])
-
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-        if proc_kwargs:
-            mm_extras["mm_processor_kwargs"] = proc_kwargs
-
-        return token_ids, mm_extras
+        return normalize_token_ids(processor_output["input_ids"])
 
     def _extract_images_from_messages(self, messages: list[dict[str, Any]]) -> list[Any]:
         """Extract image references from message content blocks."""
@@ -1195,14 +1065,9 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         """Build initial tokens with multimodal processor support."""
         images = self._extract_images_from_messages(messages)
         if not images:
-            self._last_mm_extras: dict[str, Any] = {}
             return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
 
-        token_ids, mm_extras = self.render_tokens_with_mm(
-            messages, images, add_generation_prompt=True, tools=tools
-        )
-        self._last_mm_extras = mm_extras
-        return token_ids
+        return self.render_tokens_with_mm(messages, images, add_generation_prompt=True, tools=tools)
 
     def _render_incremental_with_mm(
         self,
@@ -1210,7 +1075,7 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         images: list[Any],
         *,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render incremental messages via synthetic prefix + trim (single processor call)."""
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
@@ -1222,31 +1087,29 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
         flat_messages = self._flatten_multimodal_content(messages)
         prefix_msgs = [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE]
         prefix_text = apply_chat_template(
-            self.tokenizer, prefix_msgs, tokenize=False, add_generation_prompt=False, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs,
+            tokenize=False,
+            add_generation_prompt=False,
+            **template_kwargs,
         )
         trim_length = len(self.tokenizer.encode(prefix_text, add_special_tokens=False))
 
         full_text = apply_chat_template(
-            self.tokenizer, prefix_msgs + flat_messages, tokenize=False, add_generation_prompt=True, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs + flat_messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=full_text, images=images if images else None,
+            self.processor,
+            text=full_text,
+            images=images if images else None,
         )
 
         all_ids = normalize_token_ids(processor_output["input_ids"])
-        appended_ids = list(all_ids[trim_length:])
-
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-
-        return appended_ids, mm_extras
+        return list(all_ids[trim_length:])
 
     def merge_tokens(
         self,
@@ -1258,73 +1121,17 @@ class MiMoVLContinuousTokenBuilder(QwenContinuousTokenBuilder):
     ) -> MergeResult:
         """Merge tokens with multimodal awareness."""
         self._assert_append_only(previous_messages, updated_messages)
-        appended_messages = updated_messages[len(previous_messages):]
+        appended_messages = updated_messages[len(previous_messages) :]
 
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
                 previous_messages, updated_messages, tools=tools
             )
-            return self._merge_token_ids(runtime_token_ids, appended_ids)
+            return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
-        appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
-            appended_messages, new_images, tools=tools
-        )
-
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
-        prev_images = self._extract_images_from_messages(previous_messages)
-        all_spans = self.extract_vision_placeholders(merge_result.token_ids)
-        image_token_spans = all_spans[len(prev_images):]
-
-        return MergeResult(
-            token_ids=merge_result.token_ids,
-            appended_token_count=merge_result.appended_token_count,
-            kind=merge_result.kind,
-            inserted_token_ids=merge_result.inserted_token_ids,
-            removed_prefix_token_count=merge_result.removed_prefix_token_count,
-            pixel_values=delta_mm_extras.get("pixel_values"),
-            image_grid_thw=delta_mm_extras.get("image_grid_thw", []),
-            image_token_spans=image_token_spans,
-            mm_processor_kwargs=delta_mm_extras.get("mm_processor_kwargs", {}),
-        )
-
-    def _slice_mm_delta(
-        self,
-        prev_image_count: int,
-        full_mm_extras: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Slice full mm_extras to only include new (delta) images."""
-        grid_thw = full_mm_extras.get("image_grid_thw", [])
-        pixel_values = full_mm_extras.get("pixel_values")
-
-        if prev_image_count == 0:
-            return full_mm_extras
-        if prev_image_count >= len(grid_thw):
-            return {}
-
-        delta_grid_thw = grid_thw[prev_image_count:]
-
-        if pixel_values is not None:
-            prev_patch_count = sum(
-                row[0] * row[1] * row[2] for row in grid_thw[:prev_image_count]
-            )
-            if hasattr(pixel_values, "__getitem__"):
-                delta_pixel_values = pixel_values[prev_patch_count:]
-            else:
-                logger.warning(
-                    "pixel_values type %s does not support slicing; delta will be None",
-                    type(pixel_values).__name__,
-                )
-                delta_pixel_values = None
-        else:
-            delta_pixel_values = None
-
-        return {
-            "pixel_values": delta_pixel_values,
-            "image_grid_thw": delta_grid_thw,
-            "mm_processor_kwargs": full_mm_extras.get("mm_processor_kwargs", {}),
-        }
-
+        appended_token_ids = self._render_incremental_with_mm(appended_messages, new_images, tools=tools)
+        return self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
 
 
 class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
@@ -1378,7 +1185,7 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
         add_generation_prompt: bool = True,
         mm_processor_kwargs: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
 
@@ -1387,29 +1194,22 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
             template_kwargs["tools"] = tools
 
         text = apply_chat_template(
-            self.tokenizer, messages, tokenize=False,
-            add_generation_prompt=add_generation_prompt, **template_kwargs,
+            self.tokenizer,
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            **template_kwargs,
         )
 
         proc_kwargs = dict(mm_processor_kwargs or {})
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=text, images=images if images else None,
+            self.processor,
+            text=text,
+            images=images if images else None,
             mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
         )
 
-        token_ids = normalize_token_ids(processor_output["input_ids"])
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-        if proc_kwargs:
-            mm_extras["mm_processor_kwargs"] = proc_kwargs
-        return token_ids, mm_extras
+        return normalize_token_ids(processor_output["input_ids"])
 
     def _extract_images_from_messages(self, messages: list[dict[str, Any]]) -> list[Any]:
         images: list[Any] = []
@@ -1430,17 +1230,20 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
         return images
 
     def build_initial_tokens(
-        self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None = None,
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
         images = self._extract_images_from_messages(messages)
         if not images:
-            self._last_mm_extras: dict[str, Any] = {}
             return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
-        token_ids, mm_extras = self.render_tokens_with_mm(
-            messages, images, add_generation_prompt=True, tools=tools,
+        return self.render_tokens_with_mm(
+            messages,
+            images,
+            add_generation_prompt=True,
+            tools=tools,
         )
-        self._last_mm_extras = mm_extras
-        return token_ids
 
     def _render_incremental_with_mm(
         self,
@@ -1448,7 +1251,7 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
         images: list[Any],
         *,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render incremental messages via synthetic prefix + trim (single processor call)."""
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
@@ -1459,31 +1262,29 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
 
         prefix_msgs = [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE]
         prefix_text = apply_chat_template(
-            self.tokenizer, prefix_msgs, tokenize=False, add_generation_prompt=False, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs,
+            tokenize=False,
+            add_generation_prompt=False,
+            **template_kwargs,
         )
         trim_length = len(self.tokenizer.encode(prefix_text, add_special_tokens=False))
 
         full_text = apply_chat_template(
-            self.tokenizer, prefix_msgs + messages, tokenize=False, add_generation_prompt=True, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs + messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=full_text, images=images if images else None,
+            self.processor,
+            text=full_text,
+            images=images if images else None,
         )
 
         all_ids = normalize_token_ids(processor_output["input_ids"])
-        appended_ids = list(all_ids[trim_length:])
-
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-
-        return appended_ids, mm_extras
+        return list(all_ids[trim_length:])
 
     def merge_tokens(
         self,
@@ -1494,55 +1295,23 @@ class GLM4VContinuousTokenBuilder(GLMContinuousTokenBuilder):
         tools: list[dict[str, Any]] | None = None,
     ) -> MergeResult:
         self._assert_append_only(previous_messages, updated_messages)
-        appended_messages = updated_messages[len(previous_messages):]
+        appended_messages = updated_messages[len(previous_messages) :]
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
-                previous_messages, updated_messages, tools=tools,
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
+                previous_messages,
+                updated_messages,
+                tools=tools,
             )
-            return self._merge_token_ids(runtime_token_ids, appended_ids)
+            return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
-        appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
-            appended_messages, new_images, tools=tools,
-        )
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
-        prev_images = self._extract_images_from_messages(previous_messages)
-        all_spans = self.extract_vision_placeholders(merge_result.token_ids)
-        image_token_spans = all_spans[len(prev_images):]
-
-        return MergeResult(
-            token_ids=merge_result.token_ids,
-            appended_token_count=merge_result.appended_token_count,
-            kind=merge_result.kind,
-            inserted_token_ids=merge_result.inserted_token_ids,
-            removed_prefix_token_count=merge_result.removed_prefix_token_count,
-            pixel_values=delta_mm_extras.get("pixel_values"),
-            image_grid_thw=delta_mm_extras.get("image_grid_thw", []),
-            image_token_spans=image_token_spans,
-            mm_processor_kwargs=delta_mm_extras.get("mm_processor_kwargs", {}),
+        appended_token_ids = self._render_incremental_with_mm(
+            appended_messages,
+            new_images,
+            tools=tools,
         )
 
-    def _slice_mm_delta(self, prev_image_count: int, full_mm_extras: dict[str, Any]) -> dict[str, Any]:
-        grid_thw = full_mm_extras.get("image_grid_thw", [])
-        pixel_values = full_mm_extras.get("pixel_values")
-        if prev_image_count == 0:
-            return full_mm_extras
-        if prev_image_count >= len(grid_thw):
-            return {}
-        delta_grid_thw = grid_thw[prev_image_count:]
-        if pixel_values is not None:
-            prev_patch_count = sum(row[0] * row[1] * row[2] for row in grid_thw[:prev_image_count])
-            if hasattr(pixel_values, "__getitem__"):
-                delta_pixel_values = pixel_values[prev_patch_count:]
-            else:
-                logger.warning(
-                    "pixel_values type %s does not support slicing; delta will be None",
-                    type(pixel_values).__name__,
-                )
-                delta_pixel_values = None
-        else:
-            delta_pixel_values = None
-        return {"pixel_values": delta_pixel_values, "image_grid_thw": delta_grid_thw, "mm_processor_kwargs": full_mm_extras.get("mm_processor_kwargs", {})}
+        return self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
 
 
 class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
@@ -1559,7 +1328,7 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
         self._media_start_id = _require_token_id(tokenizer, "<|media_start|>")
         self._media_end_id = _require_token_id(tokenizer, "<|media_end|>")
         merge_kernel = getattr(getattr(processor, "image_processor", None), "merge_kernel_size", None)
-        if isinstance(merge_kernel, (list, tuple)):
+        if isinstance(merge_kernel, list | tuple):
             merge_kernel = merge_kernel[0]
         self._spatial_merge_size = int(merge_kernel) if merge_kernel is not None else 2
 
@@ -1599,7 +1368,7 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
         add_generation_prompt: bool = True,
         mm_processor_kwargs: dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
 
@@ -1608,29 +1377,22 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
             template_kwargs["tools"] = tools
 
         text = apply_chat_template(
-            self.tokenizer, messages, tokenize=False,
-            add_generation_prompt=add_generation_prompt, **template_kwargs,
+            self.tokenizer,
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            **template_kwargs,
         )
 
         proc_kwargs = dict(mm_processor_kwargs or {})
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=text, images=images if images else None,
+            self.processor,
+            text=text,
+            images=images if images else None,
             mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
         )
 
-        token_ids = normalize_token_ids(processor_output["input_ids"])
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-        if proc_kwargs:
-            mm_extras["mm_processor_kwargs"] = proc_kwargs
-        return token_ids, mm_extras
+        return normalize_token_ids(processor_output["input_ids"])
 
     def _extract_images_from_messages(self, messages: list[dict[str, Any]]) -> list[Any]:
         images: list[Any] = []
@@ -1651,17 +1413,20 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
         return images
 
     def build_initial_tokens(
-        self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None = None,
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
         images = self._extract_images_from_messages(messages)
         if not images:
-            self._last_mm_extras: dict[str, Any] = {}
             return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
-        token_ids, mm_extras = self.render_tokens_with_mm(
-            messages, images, add_generation_prompt=True, tools=tools,
+        return self.render_tokens_with_mm(
+            messages,
+            images,
+            add_generation_prompt=True,
+            tools=tools,
         )
-        self._last_mm_extras = mm_extras
-        return token_ids
 
     def _render_incremental_with_mm(
         self,
@@ -1669,7 +1434,7 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
         images: list[Any],
         *,
         tools: list[dict[str, Any]] | None = None,
-    ) -> tuple[list[int], dict[str, Any]]:
+    ) -> list[int]:
         """Render incremental messages via synthetic prefix + trim (single processor call)."""
         from verl.utils.chat_template import apply_chat_template
         from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
@@ -1680,31 +1445,29 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
 
         prefix_msgs = [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE]
         prefix_text = apply_chat_template(
-            self.tokenizer, prefix_msgs, tokenize=False, add_generation_prompt=False, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs,
+            tokenize=False,
+            add_generation_prompt=False,
+            **template_kwargs,
         )
         trim_length = len(self.tokenizer.encode(prefix_text, add_special_tokens=False))
 
         full_text = apply_chat_template(
-            self.tokenizer, prefix_msgs + messages, tokenize=False, add_generation_prompt=True, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs + messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=full_text, images=images if images else None,
+            self.processor,
+            text=full_text,
+            images=images if images else None,
         )
 
         all_ids = normalize_token_ids(processor_output["input_ids"])
-        appended_ids = list(all_ids[trim_length:])
-
-        mm_extras: dict[str, Any] = {}
-        if "pixel_values" in processor_output:
-            mm_extras["pixel_values"] = processor_output["pixel_values"]
-        if "image_grid_thw" in processor_output:
-            grid_thw = processor_output["image_grid_thw"]
-            if hasattr(grid_thw, "tolist"):
-                mm_extras["image_grid_thw"] = [tuple(row) for row in grid_thw.tolist()]
-            else:
-                mm_extras["image_grid_thw"] = list(grid_thw)
-
-        return appended_ids, mm_extras
+        return list(all_ids[trim_length:])
 
     def merge_tokens(
         self,
@@ -1715,63 +1478,20 @@ class KimiVLContinuousTokenBuilder(ContinuousTokenBuilder):
         tools: list[dict[str, Any]] | None = None,
     ) -> MergeResult:
         self._assert_append_only(previous_messages, updated_messages)
-        new_images = self._extract_images_from_messages(updated_messages[len(previous_messages):])
+        new_images = self._extract_images_from_messages(updated_messages[len(previous_messages) :])
         if not new_images:
-            appended_ids = self.tokenize_incremental_messages(
-                previous_messages, updated_messages, tools=tools,
+            appended_ids = self.tokenize_non_assistant_incremental_messages(
+                previous_messages,
+                updated_messages,
+                tools=tools,
             )
-            return self._merge_token_ids(runtime_token_ids, appended_ids)
+            return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
-        appended_messages = updated_messages[len(previous_messages):]
-        appended_token_ids, delta_mm_extras = self._render_incremental_with_mm(
-            appended_messages, new_images, tools=tools,
+        appended_messages = updated_messages[len(previous_messages) :]
+        appended_token_ids = self._render_incremental_with_mm(
+            appended_messages,
+            new_images,
+            tools=tools,
         )
 
-        merge_result = self._merge_token_ids(runtime_token_ids, appended_token_ids)
-        prev_images = self._extract_images_from_messages(previous_messages)
-        all_spans = self.extract_vision_placeholders(merge_result.token_ids)
-        image_token_spans = all_spans[len(prev_images):]
-
-        return MergeResult(
-            token_ids=merge_result.token_ids,
-            appended_token_count=merge_result.appended_token_count,
-            kind=merge_result.kind,
-            inserted_token_ids=merge_result.inserted_token_ids,
-            removed_prefix_token_count=merge_result.removed_prefix_token_count,
-            pixel_values=delta_mm_extras.get("pixel_values"),
-            image_grid_thw=delta_mm_extras.get("image_grid_thw", []),
-            image_token_spans=image_token_spans,
-            mm_processor_kwargs=delta_mm_extras.get("mm_processor_kwargs", {}),
-        )
-
-    def _slice_mm_delta(self, prev_image_count: int, full_mm_extras: dict[str, Any]) -> dict[str, Any]:
-        grid_thw = full_mm_extras.get("image_grid_thw", [])
-        pixel_values = full_mm_extras.get("pixel_values")
-
-        if not grid_thw and pixel_values is not None:
-            if prev_image_count == 0:
-                return full_mm_extras
-            logger.warning(
-                "Kimi-VL: no image_grid_thw available for delta slicing; "
-                "passing full pixel_values (prev_image_count=%d)", prev_image_count,
-            )
-            return {"pixel_values": pixel_values, "mm_processor_kwargs": full_mm_extras.get("mm_processor_kwargs", {})}
-
-        if prev_image_count == 0:
-            return full_mm_extras
-        if prev_image_count >= len(grid_thw):
-            return {}
-        delta_grid_thw = grid_thw[prev_image_count:]
-        if pixel_values is not None:
-            prev_patch_count = sum(row[0] * row[1] * row[2] for row in grid_thw[:prev_image_count])
-            if hasattr(pixel_values, "__getitem__"):
-                delta_pixel_values = pixel_values[prev_patch_count:]
-            else:
-                logger.warning(
-                    "pixel_values type %s does not support slicing; delta will be None",
-                    type(pixel_values).__name__,
-                )
-                delta_pixel_values = None
-        else:
-            delta_pixel_values = None
-        return {"pixel_values": delta_pixel_values, "image_grid_thw": delta_grid_thw, "mm_processor_kwargs": full_mm_extras.get("mm_processor_kwargs", {})}
+        return self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
