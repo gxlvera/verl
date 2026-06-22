@@ -19,6 +19,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .chat_template import apply_chat_template
+from .tokenizer import normalize_token_ids
+
 _SUPPORTED_APPEND_ROLES = frozenset({"tool", "user", "system"})
 _SYNTHETIC_SYSTEM_MESSAGE: dict[str, Any] = {"role": "system", "content": "continuous token synthetic system"}
 _SYNTHETIC_USER_MESSAGE: dict[str, Any] = {"role": "user", "content": "continuous token synthetic user"}
@@ -175,9 +178,6 @@ class ContinuousTokenBuilder:
         add_generation_prompt: bool,
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
-        from verl.utils.chat_template import apply_chat_template
-        from verl.utils.tokenizer import normalize_token_ids
-
         tokenized = apply_chat_template(
             self.tokenizer,
             messages,

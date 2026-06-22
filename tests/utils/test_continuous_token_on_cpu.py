@@ -16,7 +16,7 @@ import logging
 
 import pytest
 
-from verl.utils.continuous_token import (
+from verl.utils.tokenizer.continuous_token import (
     ContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
@@ -25,7 +25,7 @@ from verl.utils.continuous_token import (
     MiniMaxContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
 )
-from verl.utils.continuous_token_wiring import (
+from verl.utils.tokenizer.continuous_token_wiring import (
     CONTINUOUS_TOKEN_BUILDER_FAMILIES,
     ContinuousTokenModelFamily,
     create_continuous_token_builder,
