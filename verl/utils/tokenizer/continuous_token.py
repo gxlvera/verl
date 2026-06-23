@@ -269,7 +269,7 @@ class ContinuousTokenBuilder:
                 "type": "function",
                 "function": {
                     "name": _tool_message_name_or_dummy(tool_message),
-                    "arguments": {},
+                    "arguments": self._synthetic_tool_arguments(),
                 },
             }
             tool_calls.append(tool_call)
@@ -279,6 +279,9 @@ class ContinuousTokenBuilder:
             "reasoning_content": _ASSISTANT_REASONING_CONTENT,
             "tool_calls": tool_calls,
         }
+
+    def _synthetic_tool_arguments(self) -> Any:
+        return {}
 
     def align_response_metadata(
         self,
@@ -762,6 +765,9 @@ class DeepSeekContinuousTokenBuilder(ContinuousTokenBuilder):
         if token_id is None or token_id == unk:
             return None
         return int(token_id)
+
+    def _synthetic_tool_arguments(self) -> str:
+        return "{}"
 
     def _merge_non_assistant_token_ids(
         self, runtime_token_ids: list[int], appended_token_ids: list[int]

@@ -104,6 +104,52 @@ class _RecordingTemplateTokenizer(_TemplateTokenizer):
         )
 
 
+class _StringArgumentsToolTemplateTokenizer(_TemplateTokenizer):
+    """Template that fails if tool-call arguments are not strings."""
+
+    def __init__(self):
+        super().__init__()
+        self.arguments = []
+
+    def apply_chat_template(
+        self,
+        messages,
+        tokenize=True,
+        add_generation_prompt=True,
+        tools=None,
+        return_dict=False,
+        **kwargs,
+    ):
+        del tools, return_dict, kwargs
+        rendered = ""
+        for message in messages:
+            role = message["role"]
+            rendered += f"<{role}>"
+            for tool_call in message.get("tool_calls") or []:
+                function = tool_call.get("function", tool_call)
+                arguments = function.get("arguments", "")
+                self.arguments.append(arguments)
+                rendered += function.get("name", "") + arguments
+            rendered += message.get("content", "")
+        if add_generation_prompt:
+            rendered += "<assistant>"
+        if tokenize:
+            return self.encode(rendered, add_special_tokens=False)
+        return rendered
+
+
+class _DeepSeekStringArgumentsTokenizer(_StringArgumentsToolTemplateTokenizer):
+    _token_ids = {
+        "<｜end▁of▁sentence｜>": 1,
+        "<｜begin▁of▁sentence｜>": 2,
+        "<｜User｜>": 3,
+        "<｜Assistant｜>": 4,
+    }
+
+    def convert_tokens_to_ids(self, token):
+        return self._token_ids.get(token, 0)
+
+
 class _NonPrefixStableTokenizer(_TemplateTokenizer):
     def apply_chat_template(
         self,
@@ -669,6 +715,18 @@ def test_default_builder_builds_dummy_assistant_from_tool_messages_only():
         "type": "function",
         "function": {"name": "continuous_token_tool", "arguments": {}},
     }
+
+
+def test_deepseek_builder_uses_string_arguments_for_synthetic_tool_calls():
+    tokenizer = _DeepSeekStringArgumentsTokenizer()
+    builder = DeepSeekContinuousTokenBuilder(tokenizer)
+    tool_messages = [{"role": "tool", "content": "answer", "name": "from_message"}]
+
+    incremental_ids = builder._tokenize_tool_group(tool_messages, previous_messages=[])
+
+    assert incremental_ids == tokenizer.encode("<tool>answer", add_special_tokens=False)
+    assert tokenizer.arguments
+    assert all(argument == "{}" for argument in tokenizer.arguments)
 
 
 def test_default_builder_merges_append_only_non_assistant_messages():
