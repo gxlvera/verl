@@ -46,6 +46,13 @@ data:
   # Set to True to ignore input_ids mismatch and use the concatenated input_ids as the final input_ids.
   ignore_input_ids_mismatch: False
 
+  # Continuous token settings for SFT multi-turn data. When enabled, the dataset uses one full
+  # chat-template encode as canonical input_ids and reconstructs assistant loss_mask separately.
+  # Unsupported samples fall back to the legacy per-message assembly by default.
+  continuous_token:
+    enable: False
+    fallback_to_legacy: True
+
 # Checkpoint configuration
 checkpoint:
   _target_: verl.trainer.config.CheckpointConfig

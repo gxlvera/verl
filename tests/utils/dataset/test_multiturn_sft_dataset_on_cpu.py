@@ -36,6 +36,248 @@ from verl.utils.model import extract_multi_modal_inputs
 custom_model_prefix = Path("~/models").expanduser().resolve()
 
 
+class _CanonicalMockTokenizer:
+    pad_token_id = 0
+
+    @staticmethod
+    def _content_to_text(content):
+        if isinstance(content, str):
+            return content
+        text = ""
+        for item in content:
+            if item.get("type") == "text":
+                text += item.get("text", "")
+            elif item.get("type") == "image":
+                text += "<image>"
+        return text
+
+    def _render(self, messages, add_generation_prompt=False):
+        final_assistant_idx = next(
+            (idx for idx in range(len(messages) - 1, -1, -1) if messages[idx]["role"] == "assistant"),
+            -1,
+        )
+        parts = []
+        for idx, message in enumerate(messages):
+            role = message["role"]
+            parts.append(f"<{role}>")
+            if role == "assistant" and idx == final_assistant_idx and len(messages) > 1:
+                parts.append("<think></think>")
+            parts.append(self._content_to_text(message.get("content", "")))
+            parts.append("</s>")
+        if add_generation_prompt:
+            parts.append("<assistant>")
+        return "".join(parts)
+
+    @staticmethod
+    def _encode(text):
+        return [ord(ch) for ch in text]
+
+    @staticmethod
+    def _tensor_dict(ids, return_offsets_mapping=False):
+        result = {
+            "input_ids": torch.tensor([ids], dtype=torch.long),
+            "attention_mask": torch.ones((1, len(ids)), dtype=torch.long),
+        }
+        if return_offsets_mapping:
+            result["offset_mapping"] = torch.tensor(
+                [[(idx, idx + 1) for idx in range(len(ids))]], dtype=torch.long
+            )
+        return result
+
+    def apply_chat_template(
+        self,
+        messages,
+        tokenize=True,
+        add_generation_prompt=False,
+        tools=None,
+        return_dict=False,
+        return_tensors=None,
+        **kwargs,
+    ):
+        text = self._render(messages, add_generation_prompt=add_generation_prompt)
+        if not tokenize:
+            return text
+
+        ids = self._encode(text)
+        if return_dict:
+            return self._tensor_dict(ids, return_offsets_mapping=kwargs.get("return_offsets_mapping", False))
+        return ids
+
+    def __call__(self, text, add_special_tokens=False, return_offsets_mapping=False, return_tensors=None):
+        ids = self._encode(text)
+        return self._tensor_dict(ids, return_offsets_mapping=return_offsets_mapping)
+
+    def decode(self, ids, skip_special_tokens=False):
+        if isinstance(ids, torch.Tensor):
+            ids = ids.tolist()
+        return "".join(chr(int(token_id)) for token_id in ids)
+
+
+class _CanonicalMockImageProcessor:
+    patch_size = 14
+
+
+class _CanonicalMockProcessor(_CanonicalMockTokenizer):
+    def __init__(self):
+        self.image_processor = _CanonicalMockImageProcessor()
+
+    def apply_chat_template(
+        self,
+        messages,
+        tokenize=True,
+        add_generation_prompt=False,
+        tools=None,
+        return_dict=False,
+        return_tensors=None,
+        **kwargs,
+    ):
+        output = super().apply_chat_template(
+            messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+            tools=tools,
+            return_dict=return_dict,
+            return_tensors=return_tensors,
+            **kwargs,
+        )
+        if not tokenize or not return_dict:
+            return output
+
+        text = self._render(messages, add_generation_prompt=add_generation_prompt)
+        output["mm_token_type_ids"] = torch.zeros_like(output["input_ids"])
+        if "<image>" in text:
+            output["pixel_values"] = torch.ones((1, 3), dtype=torch.float)
+            output["image_grid_thw"] = torch.tensor([[1, 1, 1]], dtype=torch.long)
+        return output
+
+
+class _NativeMaskMockTokenizer(_CanonicalMockTokenizer):
+    chat_template = "{% generation %}"
+
+    def apply_chat_template(
+        self,
+        messages,
+        tokenize=True,
+        add_generation_prompt=False,
+        tools=None,
+        return_dict=False,
+        return_tensors=None,
+        **kwargs,
+    ):
+        output = super().apply_chat_template(
+            messages,
+            tokenize=tokenize,
+            add_generation_prompt=add_generation_prompt,
+            tools=tools,
+            return_dict=return_dict,
+            return_tensors=return_tensors,
+            **kwargs,
+        )
+        if not tokenize or not return_dict or not kwargs.get("return_assistant_tokens_mask", False):
+            return output
+
+        text = self._render(messages, add_generation_prompt=add_generation_prompt)
+        assistant_masks = torch.zeros_like(output["input_ids"])
+        answer_start = text.find("Answer")
+        if answer_start >= 0:
+            assistant_masks[0, answer_start] = 1
+        output["assistant_masks"] = assistant_masks
+        return output
+
+
+def test_multiturn_sft_continuous_token_uses_canonical_full_encode_for_text(tmp_path):
+    messages = [
+        {"role": "user", "content": "Question"},
+        {"role": "assistant", "content": "Answer"},
+        {"role": "user", "content": "Again"},
+        {"role": "assistant", "content": "Done"},
+    ]
+    test_file = tmp_path / "canonical_text.parquet"
+    pd.DataFrame({"messages": [messages]}).to_parquet(test_file)
+
+    tokenizer = _CanonicalMockTokenizer()
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=None,
+        config={
+            "max_length": 512,
+            "pad_mode": "no_padding",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+
+    full_ids = torch.tensor(
+        tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False), dtype=torch.long
+    )
+    assert torch.equal(item["input_ids"], full_ids)
+    assert "<think></think>Done" in tokenizer.decode(item["input_ids"])
+    assert tokenizer.decode(item["input_ids"][item["loss_mask"] == 1]) == "Answer</s>Done</s>"
+    assert item["loss_mask"].shape == item["input_ids"].shape == item["position_ids"].shape
+
+
+def test_multiturn_sft_continuous_token_prefers_native_assistant_mask(tmp_path):
+    messages = [
+        {"role": "user", "content": "Question"},
+        {"role": "assistant", "content": "Answer"},
+    ]
+    test_file = tmp_path / "native_mask.parquet"
+    pd.DataFrame({"messages": [messages]}).to_parquet(test_file)
+
+    tokenizer = _NativeMaskMockTokenizer()
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=None,
+        config={
+            "max_length": 512,
+            "pad_mode": "no_padding",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+
+    assert tokenizer.decode(item["input_ids"][item["loss_mask"] == 1]) == "A"
+
+
+def test_multiturn_sft_continuous_token_uses_full_processor_encode_for_multimodal(tmp_path):
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": "mock-image"},
+                {"type": "text", "text": "Describe it."},
+            ],
+        },
+        {"role": "assistant", "content": [{"type": "text", "text": "A red square."}]},
+    ]
+    test_file = tmp_path / "canonical_vl.parquet"
+    pd.DataFrame({"messages": [messages], "tools": [[]]}).to_parquet(test_file)
+
+    processor = _CanonicalMockProcessor()
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=processor,
+        processor=processor,
+        config={
+            "max_length": 512,
+            "pad_mode": "no_padding",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+    decoded = processor.decode(item["input_ids"])
+
+    assert "<image>Describe it." in decoded
+    assert processor.decode(item["input_ids"][item["loss_mask"] == 1]) == "A red square.</s>"
+    assert "<image>" in processor.decode(item["input_ids"][item["loss_mask"] == 0])
+    assert "multi_modal_inputs" in item
+    assert "pixel_values" in item["multi_modal_inputs"]
+    assert "image_grid_thw" in item["multi_modal_inputs"]
+    assert "mm_token_type_ids" not in item["multi_modal_inputs"]
+
+
 @pytest.mark.parametrize(
     "model_path, ignore_input_ids_mismatch",
     [
