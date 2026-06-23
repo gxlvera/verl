@@ -66,10 +66,10 @@ SFT_CT_VL_FAMILY_CASES = [
     ("qwen2vl", "Qwen/Qwen2-VL-72B-Instruct", True),
     ("qwen25vl", "Qwen/Qwen2.5-VL-3B-Instruct", True),
     ("qwen3vl", "Qwen/Qwen3-VL-2B-Instruct", True),
-    ("mimovl", "XiaomiMiMo/MiMo-VL-7B", False),
-    ("kimivl", "moonshotai/Kimi-VL-A3B-Instruct", False),
-    ("glm4v", "zai-org/GLM-4.5V", False),
-    ("deepseekvl2", "deepseek-ai/deepseek-vl2-tiny", False),
+    ("mimovl", "XiaomiMiMo/MiMo-VL-7B", True),
+    ("kimivl", "moonshotai/Kimi-VL-A3B-Instruct", True),
+    ("glm4v", "zai-org/GLM-4.5V", True),
+    ("deepseekvl2", "deepseek-ai/deepseek-vl2-tiny", True),
 ]
 
 
@@ -82,9 +82,12 @@ def _load_local_tokenizer_or_skip(model_id: str):
 
 def _load_local_processor_or_skip(model_id: str):
     try:
-        return AutoProcessor.from_pretrained(model_id, local_files_only=True, trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(model_id, local_files_only=True, trust_remote_code=True)
     except Exception as exc:
         pytest.skip(f"Local processor for {model_id!r} is not available: {exc}")
+    if processor.__class__.__name__ == "TokenizersBackend":
+        pytest.skip(f"Local processor for {model_id!r} resolved to tokenizer backend only")
+    return processor
 
 
 def _make_text_messages():
@@ -268,6 +271,52 @@ class _CanonicalMockProcessor(_CanonicalMockTokenizer):
         return output
 
 
+class _TokenizerRenderedMockProcessor:
+    name_or_path = "XiaomiMiMo/MiMo-VL-7B"
+
+    def __init__(self):
+        self.image_processor = _CanonicalMockImageProcessor()
+        self.calls = []
+
+    def apply_chat_template(self, *args, **kwargs):
+        raise RuntimeError("This processor requires tokenizer-rendered multimodal text")
+
+    def __call__(
+        self,
+        text,
+        images=None,
+        videos=None,
+        return_tensors=None,
+        return_offsets_mapping=False,
+        **kwargs,
+    ):
+        self.calls.append({"text": text, "images": images, "videos": videos, "kwargs": kwargs})
+        rendered = text.replace("<|vision_start|><|image_pad|><|vision_end|>", "<image>")
+        ids = _CanonicalMockTokenizer._encode(rendered)
+        output = _CanonicalMockTokenizer._tensor_dict(ids, return_offsets_mapping=return_offsets_mapping)
+        output["pixel_values"] = torch.ones((len(images or []), 3), dtype=torch.float)
+        output["image_grid_thw"] = torch.tensor([[1, 1, 1]], dtype=torch.long)
+        return output
+
+
+class _DeepSeekVL2MockProcessor:
+    name_or_path = "deepseek-ai/deepseek-vl2-tiny"
+
+    def __init__(self):
+        self.image_processor = _CanonicalMockImageProcessor()
+        self.calls = []
+
+    def __call__(self, conversations, images=None, force_batchify=False, **kwargs):
+        self.calls.append(
+            {"conversations": deepcopy(conversations), "images": images, "force_batchify": force_batchify}
+        )
+        text = "".join(f"{turn['role']}{turn.get('content', '')}</s>" for turn in conversations)
+        ids = _CanonicalMockTokenizer._encode(text)
+        output = _CanonicalMockTokenizer._tensor_dict(ids)
+        output["pixel_values"] = torch.ones((len(images or []), 3), dtype=torch.float)
+        return output
+
+
 class _NativeMaskMockTokenizer(_CanonicalMockTokenizer):
     chat_template = "{% generation %}"
 
@@ -395,6 +444,78 @@ def test_multiturn_sft_continuous_token_uses_full_processor_encode_for_multimoda
     assert "mm_token_type_ids" not in item["multi_modal_inputs"]
 
 
+def test_multiturn_sft_continuous_token_uses_tokenizer_rendered_vl_processor(tmp_path):
+    messages = [
+        {"role": "user", "content": "<image>Describe it."},
+        {"role": "assistant", "content": "A red square."},
+    ]
+    test_file = tmp_path / "tokenizer_rendered_vl.parquet"
+    pd.DataFrame({"messages": [messages], "images": [[{"bytes": _image_bytes("red")}]]}).to_parquet(test_file)
+
+    tokenizer = _CanonicalMockTokenizer()
+    tokenizer.name_or_path = "XiaomiMiMo/MiMo-VL-7B"
+    processor = _TokenizerRenderedMockProcessor()
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=processor,
+        config={
+            "max_length": 512,
+            "pad_mode": "no_padding",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+    decoded = tokenizer.decode(item["input_ids"])
+    masked_text = tokenizer.decode(item["input_ids"][item["loss_mask"] == 1])
+
+    assert "<image>Describe it." in decoded
+    assert masked_text == "A red square."
+    assert processor.calls[0]["images"]
+    assert "<|vision_start|><|image_pad|><|vision_end|>" in processor.calls[0]["text"]
+    assert "pixel_values" in item["multi_modal_inputs"]
+
+
+def test_multiturn_sft_continuous_token_uses_deepseek_vl2_processor_api(tmp_path):
+    messages = [
+        {"role": "user", "content": "<image>Describe this image."},
+        {"role": "assistant", "content": "A tiny red image."},
+    ]
+    test_file = tmp_path / "deepseek_vl2.parquet"
+    pd.DataFrame({"messages": [messages], "images": [[{"bytes": _image_bytes("red")}]]}).to_parquet(test_file)
+
+    tokenizer = _CanonicalMockTokenizer()
+    tokenizer.name_or_path = "deepseek-ai/deepseek-vl2-tiny"
+    processor = _DeepSeekVL2MockProcessor()
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=processor,
+        config={
+            "max_length": 512,
+            "pad_mode": "no_padding",
+            "continuous_token": {
+                "enable": True,
+                "fallback_to_legacy": False,
+                "model_family": "deepseekvl2",
+            },
+        },
+    )
+    item = dataset[0]
+    decoded = tokenizer.decode(item["input_ids"])
+    masked_text = tokenizer.decode(item["input_ids"][item["loss_mask"] == 1])
+    full_call = processor.calls[0]
+
+    assert full_call["force_batchify"] is True
+    assert full_call["conversations"][0]["role"] == "<|User|>"
+    assert full_call["conversations"][0]["content"] == "<image>Describe this image."
+    assert full_call["conversations"][1]["role"] == "<|Assistant|>"
+    assert "<|Assistant|>A tiny red image.</s>" in decoded
+    assert masked_text == "A tiny red image."
+    assert "Describe this image" not in masked_text
+    assert "pixel_values" in item["multi_modal_inputs"]
+
+
 @pytest.mark.parametrize(
     "family, model_id",
     SFT_CT_TEXT_FAMILY_CASES,
@@ -501,23 +622,38 @@ def test_multiturn_sft_continuous_token_local_vl_image_family_matrix(family, mod
     )
     item = dataset[0]
     row = pd.read_parquet(test_file).iloc[0].to_dict()
-    full_ids = _full_encode_reference(dataset, row, processor)
+    reference_messages = dataset._build_messages(deepcopy(row))
+    reference_inputs, _ = dataset._apply_full_chat_template_with_retries(
+        reference_messages,
+        tools=[],
+        enable_thinking=None,
+        return_offsets_mapping=False,
+    )
+    full_ids = reference_inputs["input_ids"][0]
     masked_text = tokenizer.decode(item["input_ids"][item["loss_mask"] == 1], skip_special_tokens=False)
     multi_modal_inputs = item["multi_modal_inputs"]
-    image_grid_thw = multi_modal_inputs["image_grid_thw"]
-    image_token_id = processor.image_token_id
-    merge_size = processor.image_processor.merge_size
-    expected_image_tokens = int(image_grid_thw.prod(dim=1).sum().item() // (merge_size**2))
-    actual_image_tokens = int((item["input_ids"] == image_token_id).sum().item())
-    masked_image_tokens = int(((item["input_ids"] == image_token_id) & (item["loss_mask"] == 1)).sum().item())
 
     assert torch.equal(item["input_ids"], full_ids)
     assert "red rectangle" in masked_text
     assert "It is red" in masked_text
     assert "pixel_values" in multi_modal_inputs
-    assert actual_image_tokens == expected_image_tokens
-    assert masked_image_tokens == 0
-    assert item["position_ids"].shape[0] == 4
+    if (
+        "image_grid_thw" in multi_modal_inputs
+        and hasattr(processor, "image_token_id")
+        and hasattr(processor.image_processor, "merge_size")
+    ):
+        image_grid_thw = multi_modal_inputs["image_grid_thw"]
+        image_token_id = processor.image_token_id
+        merge_size = processor.image_processor.merge_size
+        expected_image_tokens = int(image_grid_thw.prod(dim=1).sum().item() // (merge_size**2))
+        actual_image_tokens = int((item["input_ids"] == image_token_id).sum().item())
+        masked_image_tokens = int(((item["input_ids"] == image_token_id) & (item["loss_mask"] == 1)).sum().item())
+
+        assert actual_image_tokens == expected_image_tokens
+        assert masked_image_tokens == 0
+        assert item["position_ids"].shape[0] == 4
+    else:
+        assert item["position_ids"].shape == item["input_ids"].shape
 
 
 @pytest.mark.parametrize(

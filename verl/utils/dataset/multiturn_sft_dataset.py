@@ -21,6 +21,7 @@ import logging
 import os
 import re
 from copy import deepcopy
+from difflib import SequenceMatcher
 from functools import wraps
 from typing import Any, Optional
 
@@ -38,7 +39,7 @@ from verl.utils.dataset.dataset_utils import DatasetPadMode
 from verl.utils.dataset.vision_utils import process_image, process_video
 from verl.utils.fs import copy_local_path_from_hdfs
 from verl.utils.py_functional import convert_nested_value_to_list_recursive
-from verl.utils.tokenizer import normalize_token_ids
+from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
 from verl.utils.tokenizer.chat_template import apply_chat_template, extract_system_prompt_and_generation
 
 logger = logging.getLogger(__file__)
@@ -129,6 +130,7 @@ class MultiTurnSFTDataset(Dataset):
         self.continuous_token_enabled = continuous_token_config.get("enable", False)
         self.continuous_token_fallback_to_legacy = continuous_token_config.get("fallback_to_legacy", True)
         self.continuous_token_use_native_mask = continuous_token_config.get("use_native_mask", True)
+        self.continuous_token_model_family = str(continuous_token_config.get("model_family", "auto")).lower()
         assert self.truncation in ["error", "left", "right"]
 
         if not isinstance(parquet_files, list | ListConfig):
@@ -141,9 +143,38 @@ class MultiTurnSFTDataset(Dataset):
         self.processor = processor
         self._supports_native_assistant_mask = self._chat_template_has_generation_block()
         self._chat_template_requires_typed_content = False
+        self._sft_ct_family = self._infer_sft_continuous_token_family()
 
         self._download()
         self._read_files_and_process()
+
+    def _infer_sft_continuous_token_family(self) -> str:
+        if self.continuous_token_model_family != "auto":
+            return re.sub(r"[^a-z0-9]+", "", self.continuous_token_model_family)
+        candidates = [
+            getattr(self.tokenizer, "name_or_path", None),
+            getattr(self.processor, "name_or_path", None),
+            getattr(getattr(self.processor, "tokenizer", None), "name_or_path", None),
+            self.processor.__class__.__name__ if self.processor is not None else None,
+            self.tokenizer.__class__.__name__,
+        ]
+        haystack = " ".join(str(item).lower() for item in candidates if item)
+        compact = re.sub(r"[^a-z0-9]+", "", haystack)
+        if any(marker in haystack for marker in ("mimo-vl", "mimo_vl", "mimovl")):
+            return "mimovl"
+        if any(marker in haystack for marker in ("kimi-vl", "kimi_vl")) or "kimivl" in compact:
+            return "kimivl"
+        if any(marker in haystack for marker in ("glm-4v", "glm4v", "glm-4.5-vl", "glm-4.1-vl")):
+            return "glm4v"
+        if "deepseek" in compact and "vl" in compact:
+            return "deepseekvl2"
+        if any(marker in haystack for marker in ("qwen3-vl", "qwen3_vl")) or "qwen3vl" in compact:
+            return "qwen3vl"
+        if any(marker in haystack for marker in ("qwen2.5-vl", "qwen2_5-vl", "qwen2_5_vl")) or "qwen25vl" in compact:
+            return "qwen25vl"
+        if any(marker in haystack for marker in ("qwen2-vl", "qwen2_vl")) or "qwen2vl" in compact:
+            return "qwenvl"
+        return "default"
 
     def _chat_template_has_generation_block(self) -> bool:
         template = getattr(self.tokenizer, "chat_template", None)
@@ -378,6 +409,85 @@ class MultiTurnSFTDataset(Dataset):
         raise ValueError("Unsupported assistant content type for canonical loss mask recovery.")
 
     @staticmethod
+    def _extract_multimodal_blocks(messages: list[dict[str, Any]], block_types: tuple[str, ...]) -> list[Any]:
+        values = []
+        for message in messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") not in block_types:
+                    continue
+                value = block.get("image") or block.get("video")
+                if value is None:
+                    value = block.get("image_url")
+                    if isinstance(value, dict):
+                        value = value.get("url")
+                if value is not None:
+                    values.append(value)
+        return values
+
+    def _prepare_multimodal_template_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if self._sft_ct_family != "mimovl":
+            return messages
+
+        prepared = []
+        for message in messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                prepared.append(message)
+                continue
+
+            parts = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = block.get("type")
+                if block_type in ("image", "image_url"):
+                    parts.append("<|vision_start|><|image_pad|><|vision_end|>")
+                elif block_type == "video":
+                    parts.append("<|vision_start|><|video_pad|><|vision_end|>")
+                elif block_type == "text":
+                    parts.append(block.get("text", ""))
+            prepared.append({**message, "content": "".join(parts)})
+        return prepared
+
+    @staticmethod
+    def _processor_output_to_dict(processor_output: Any) -> dict[str, Any]:
+        if isinstance(processor_output, dict):
+            output = dict(processor_output)
+        elif hasattr(processor_output, "keys"):
+            output = {key: processor_output[key] for key in processor_output.keys()}
+        else:
+            output = {
+                key: getattr(processor_output, key)
+                for key in dir(processor_output)
+                if not key.startswith("_") and key in {"input_ids", "attention_mask"}
+            }
+
+        if "input_ids" not in output and hasattr(processor_output, "input_ids"):
+            output["input_ids"] = processor_output.input_ids
+        if "attention_mask" not in output and hasattr(processor_output, "attention_mask"):
+            output["attention_mask"] = processor_output.attention_mask
+
+        input_ids = output["input_ids"]
+        if not isinstance(input_ids, torch.Tensor):
+            input_ids = torch.tensor(input_ids, dtype=torch.long)
+        if input_ids.dim() == 1:
+            input_ids = input_ids.unsqueeze(0)
+        output["input_ids"] = input_ids.to(dtype=torch.long)
+
+        attention_mask = output.get("attention_mask")
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+        elif not isinstance(attention_mask, torch.Tensor):
+            attention_mask = torch.tensor(attention_mask, dtype=torch.long)
+        if attention_mask.dim() == 1:
+            attention_mask = attention_mask.unsqueeze(0)
+        output["attention_mask"] = attention_mask.to(dtype=torch.long)
+        return output
+
+    @staticmethod
     def _messages_with_parsed_tool_arguments(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
         normalized = deepcopy(messages)
         changed = False
@@ -419,6 +529,12 @@ class MultiTurnSFTDataset(Dataset):
 
         last_exception: Exception | None = None
         for candidate_messages in candidates:
+            if self._is_deepseek_vl2_path():
+                try:
+                    return self._apply_deepseek_vl2_full_processor(candidate_messages)
+                except Exception as exc:
+                    last_exception = exc
+
             offset_attempts = [return_offsets_mapping]
             if return_offsets_mapping:
                 offset_attempts.append(False)
@@ -437,8 +553,91 @@ class MultiTurnSFTDataset(Dataset):
                     )
                 except Exception as exc:
                     last_exception = exc
+
+            if self.processor is not None:
+                for use_offsets in offset_attempts:
+                    try:
+                        return self._apply_tokenizer_rendered_processor_inputs(
+                            candidate_messages,
+                            tools=tools,
+                            enable_thinking=enable_thinking,
+                            return_offsets_mapping=use_offsets,
+                        )
+                    except Exception as exc:
+                        last_exception = exc
         assert last_exception is not None
         raise last_exception
+
+    def _is_deepseek_vl2_path(self) -> bool:
+        if self.processor is None:
+            return False
+        processor_name = self.processor.__class__.__name__.lower()
+        return self._sft_ct_family == "deepseekvl2" or "deepseekvlv2processor" in processor_name
+
+    def _apply_tokenizer_rendered_processor_inputs(
+        self,
+        messages: list[dict],
+        tools: Optional[list[dict[str, Any]]],
+        enable_thinking: Optional[bool],
+        return_offsets_mapping: bool,
+    ) -> tuple[dict[str, Any], list[dict]]:
+        prepared_messages = self._prepare_multimodal_template_messages(messages)
+        template_kwargs = self._apply_chat_template_kwargs(enable_thinking)
+        text = apply_chat_template(
+            self.tokenizer,
+            messages=prepared_messages,
+            tools=tools,
+            add_generation_prompt=False,
+            tokenize=False,
+            **template_kwargs,
+        )
+        processor_kwargs = {"return_offsets_mapping": True} if return_offsets_mapping else None
+        processor_output = build_multimodal_processor_inputs(
+            self.processor,
+            text=text,
+            images=self._extract_multimodal_blocks(messages, ("image", "image_url")) or None,
+            videos=self._extract_multimodal_blocks(messages, ("video",)) or None,
+            mm_processor_kwargs=processor_kwargs,
+        )
+        return self._processor_output_to_dict(processor_output), prepared_messages
+
+    def _to_deepseek_vl2_conversation(
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any],
+    ) -> list[dict[str, Any]]:
+        conversation = []
+        image_index = 0
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+            message_images = []
+            if isinstance(content, list):
+                parts = []
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = block.get("type")
+                    if block_type in ("image", "image_url"):
+                        parts.append("<image>")
+                        if image_index < len(images):
+                            message_images.append(images[image_index])
+                            image_index += 1
+                    elif block_type == "text":
+                        parts.append(block.get("text", ""))
+                content = "".join(parts)
+
+            if role == "assistant":
+                conversation.append({"role": "<|Assistant|>", "content": content})
+            elif role in {"user", "system", "tool"}:
+                conversation.append({"role": "<|User|>", "content": content, "images": message_images})
+        return conversation
+
+    def _apply_deepseek_vl2_full_processor(self, messages: list[dict]) -> tuple[dict[str, Any], list[dict]]:
+        images = self._extract_multimodal_blocks(messages, ("image", "image_url"))
+        conversation = self._to_deepseek_vl2_conversation(messages, images)
+        processor_output = self.processor.__call__(conversations=conversation, images=images, force_batchify=True)
+        return self._processor_output_to_dict(processor_output), messages
 
     def _render_chat_template_text(
         self,
@@ -578,6 +777,91 @@ class MultiTurnSFTDataset(Dataset):
                 "Unable to recover canonical SFT loss_mask for an assistant turn. "
                 "This sample likely needs native generation masks or a model-specific mask implementation."
             )
+
+        return loss_mask
+
+    @staticmethod
+    def _assistant_turn_has_trainable_payload(message: dict[str, Any]) -> bool:
+        if message.get("role") != "assistant":
+            return False
+        if message.get("tool_calls"):
+            return True
+        for key in ("reasoning_content", "reasoning"):
+            if message.get(key):
+                return True
+        content = message.get("content", "")
+        if isinstance(content, str):
+            return content != ""
+        if isinstance(content, list):
+            return any(
+                isinstance(block, dict) and block.get("type") == "text" and block.get("text") for block in content
+            )
+        return bool(content)
+
+    @staticmethod
+    def _blank_assistant_trainable_payload(message: dict[str, Any]) -> dict[str, Any]:
+        blanked = deepcopy(message)
+        content = blanked.get("content", "")
+        if isinstance(content, str):
+            blanked["content"] = ""
+        elif isinstance(content, list):
+            blanked["content"] = [
+                {**block, "text": ""}
+                if isinstance(block, dict) and block.get("type") == "text"
+                else block
+                for block in content
+            ]
+        else:
+            blanked["content"] = ""
+
+        if "tool_calls" in blanked:
+            blanked["tool_calls"] = []
+        for key in ("reasoning_content", "reasoning"):
+            if key in blanked:
+                blanked[key] = ""
+        return blanked
+
+    def _build_canonical_loss_mask_by_diff(
+        self,
+        input_ids: torch.Tensor,
+        messages: list[dict],
+        tools: Optional[list[dict[str, Any]]],
+        enable_thinking: Optional[bool],
+    ) -> torch.Tensor:
+        """Recover assistant spans by full-rendering the sample with one turn blanked.
+
+        This is the fallback for processors where single-message assistant
+        tokenization is either unavailable or not equivalent to the canonical
+        full conversation render. It intentionally works on token IDs so it can
+        cover non-standard multimodal processors that do not expose offsets.
+        """
+        full_ids = input_ids.tolist()
+        loss_mask = torch.zeros_like(input_ids)
+
+        for index, message in enumerate(messages):
+            if not self._assistant_turn_has_trainable_payload(message):
+                continue
+
+            blanked_messages = deepcopy(messages)
+            blanked_messages[index] = self._blank_assistant_trainable_payload(blanked_messages[index])
+            blanked_inputs, _ = self._apply_full_chat_template_with_retries(
+                blanked_messages,
+                tools=tools,
+                enable_thinking=enable_thinking,
+                return_offsets_mapping=False,
+            )
+            blanked_ids = blanked_inputs["input_ids"][0].tolist()
+            turn_mask = torch.zeros_like(input_ids)
+            matcher = SequenceMatcher(None, blanked_ids, full_ids, autojunk=False)
+            for tag, _blank_start, _blank_end, full_start, full_end in matcher.get_opcodes():
+                if tag in {"insert", "replace"}:
+                    turn_mask[full_start:full_end] = 1
+
+            if turn_mask.sum().item() == 0:
+                raise ValueError(
+                    "Unable to recover canonical SFT loss_mask by token diff for an assistant turn."
+                )
+            loss_mask |= turn_mask
 
         return loss_mask
 
@@ -775,14 +1059,22 @@ class MultiTurnSFTDataset(Dataset):
             except Exception:
                 full_text = ""
                 offset_mapping = None
-            loss_mask = self._build_canonical_loss_mask(
-                input_ids=input_ids,
-                messages=canonical_messages,
-                tools=tools,
-                enable_thinking=enable_thinking,
-                full_text=full_text,
-                offset_mapping=offset_mapping,
-            )
+            try:
+                loss_mask = self._build_canonical_loss_mask(
+                    input_ids=input_ids,
+                    messages=canonical_messages,
+                    tools=tools,
+                    enable_thinking=enable_thinking,
+                    full_text=full_text,
+                    offset_mapping=offset_mapping,
+                )
+            except Exception:
+                loss_mask = self._build_canonical_loss_mask_by_diff(
+                    input_ids=input_ids,
+                    messages=canonical_messages,
+                    tools=tools,
+                    enable_thinking=enable_thinking,
+                )
         self._clear_multimodal_token_loss_mask(input_ids, loss_mask)
         assert input_ids.shape == loss_mask.shape == attention_mask.shape, (
             f"Shape mismatch: {input_ids.shape}, {loss_mask.shape}, {attention_mask.shape}"
