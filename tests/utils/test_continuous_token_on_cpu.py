@@ -227,7 +227,7 @@ class _MiniMaxBoundaryTokenizer(_TemplateTokenizer):
 
 
 class _Gemma4BoundaryTokenizer(_TemplateTokenizer):
-    name_or_path = "google/gemma-4-27b-it"
+    name_or_path = "google/gemma-4-12B-it"
 
     def __init__(self):
         self.tool_response_id = 262144
@@ -332,8 +332,8 @@ def test_builtin_family_class_mapping(family, builder_cls):
     ("model_path", "expected"),
     [
         ("zai-org/GLM-4.7-Flash", ContinuousTokenModelFamily.GLM47),
-        ("THUDM/GLM-5-9B-Chat", ContinuousTokenModelFamily.GLM5),
-        ("google/gemma-4-27b-it", ContinuousTokenModelFamily.GEMMA4),
+        ("zai-org/GLM-5", ContinuousTokenModelFamily.GLM5),
+        ("google/gemma-4-12B-it", ContinuousTokenModelFamily.GEMMA4),
         ("openai/gpt-oss-20b", ContinuousTokenModelFamily.GPTOSS),
         ("MiniMaxAI/MiniMax-M2", ContinuousTokenModelFamily.MINIMAX_M2),
         ("MiniMaxAI/MiniMax-M2.5", ContinuousTokenModelFamily.MINIMAX_M25),
@@ -348,7 +348,7 @@ def test_builtin_family_class_mapping(family, builder_cls):
         ("Qwen/Qwen2.5-VL-7B-Instruct", ContinuousTokenModelFamily.QWEN25_VL),
         ("Qwen/Qwen3-VL-4B", ContinuousTokenModelFamily.QWEN3_VL),
         ("Qwen/Qwen2-VL-72B-Instruct", ContinuousTokenModelFamily.QWEN_VL),
-        ("XiaomiMiMo/MiMo-VL-7B", ContinuousTokenModelFamily.MIMO_VL),
+        ("XiaomiMiMo/MiMo-VL-7B-SFT", ContinuousTokenModelFamily.MIMO_VL),
         ("moonshotai/Kimi-VL-A3B-Instruct", ContinuousTokenModelFamily.KIMI_VL),
         ("zai-org/GLM-4.5V", ContinuousTokenModelFamily.GLM4V),
         ("deepseek-ai/deepseek-vl2-tiny", ContinuousTokenModelFamily.DEEPSEEK_VL2),

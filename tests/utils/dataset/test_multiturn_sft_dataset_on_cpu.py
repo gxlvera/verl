@@ -47,8 +47,8 @@ SFT_CT_TEXT_FAMILY_CASES = [
     ("minimaxm25", "MiniMaxAI/MiniMax-M2.5"),
     ("minimaxm27", "MiniMaxAI/MiniMax-M2.7"),
     ("glm47", "zai-org/GLM-4.7-Flash"),
-    ("glm5", "THUDM/GLM-5-9B-Chat"),
-    ("gemma4", "google/gemma-4-27b-it"),
+    ("glm5", "zai-org/GLM-5"),
+    ("gemma4", "google/gemma-4-12B-it"),
     ("gptoss", "openai/gpt-oss-20b"),
     ("deepseek", "deepseek-ai/DeepSeek-V3-0324"),
 ]
@@ -66,7 +66,7 @@ SFT_CT_VL_FAMILY_CASES = [
     ("qwen2vl", "Qwen/Qwen2-VL-72B-Instruct", True),
     ("qwen25vl", "Qwen/Qwen2.5-VL-3B-Instruct", True),
     ("qwen3vl", "Qwen/Qwen3-VL-2B-Instruct", True),
-    ("mimovl", "XiaomiMiMo/MiMo-VL-7B", True),
+    ("mimovl", "XiaomiMiMo/MiMo-VL-7B-SFT", True),
     ("kimivl", "moonshotai/Kimi-VL-A3B-Instruct", True),
     ("glm4v", "zai-org/GLM-4.5V", True),
     ("deepseekvl2", "deepseek-ai/deepseek-vl2-tiny", True),
@@ -272,7 +272,7 @@ class _CanonicalMockProcessor(_CanonicalMockTokenizer):
 
 
 class _TokenizerRenderedMockProcessor:
-    name_or_path = "XiaomiMiMo/MiMo-VL-7B"
+    name_or_path = "XiaomiMiMo/MiMo-VL-7B-SFT"
 
     def __init__(self):
         self.image_processor = _CanonicalMockImageProcessor()
@@ -453,7 +453,7 @@ def test_multiturn_sft_continuous_token_uses_tokenizer_rendered_vl_processor(tmp
     pd.DataFrame({"messages": [messages], "images": [[{"bytes": _image_bytes("red")}]]}).to_parquet(test_file)
 
     tokenizer = _CanonicalMockTokenizer()
-    tokenizer.name_or_path = "XiaomiMiMo/MiMo-VL-7B"
+    tokenizer.name_or_path = "XiaomiMiMo/MiMo-VL-7B-SFT"
     processor = _TokenizerRenderedMockProcessor()
     dataset = MultiTurnSFTDataset(
         parquet_files=str(test_file),
@@ -651,7 +651,10 @@ def test_multiturn_sft_continuous_token_local_vl_image_family_matrix(family, mod
 
         assert actual_image_tokens == expected_image_tokens
         assert masked_image_tokens == 0
-        assert item["position_ids"].shape[0] == 4
+        if family in {"qwen2vl", "qwen25vl", "qwen3vl", "mimovl"}:
+            assert item["position_ids"].shape[0] == 4
+        else:
+            assert item["position_ids"].shape == item["input_ids"].shape
     else:
         assert item["position_ids"].shape == item["input_ids"].shape
 
