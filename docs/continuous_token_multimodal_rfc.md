@@ -52,13 +52,13 @@ class MergeResult:
 | `supports_multimodal()` | Class-level flag; controls gate logic in agent_loop |
 | `render_tokens_with_mm(messages, images)` | Full processor render → token_ids |
 | `build_initial_tokens(messages)` | Turn 1: processor render for image placeholder expansion |
-| `merge_tokens(prev, updated, runtime_ids)` | If new images: synthetic prefix + trim render for incremental token IDs. If no new images: text-only incremental merge |
+| `merge_non_assistant_tokens(prev, updated, runtime_ids)` | If new images: synthetic prefix + trim render for incremental token IDs. If no new images: text-only incremental merge |
 | `extract_vision_placeholders(token_ids)` | Finds `<|vision_start|>...<|vision_end|>` spans |
 | `count_vision_tokens(grid_row)` | Computes merged token count: `t*(h//merge)*(w//merge)` |
 
 ### Image Tensor Handling
 
-When a new image appears at turn N, `merge_tokens` calls the multimodal processor on the appended messages with a synthetic prefix, then trims the synthetic prefix token IDs. This gives CT the correct expanded image placeholder tokens without re-processing old images for rollout token construction.
+When a new image appears at turn N, `merge_non_assistant_tokens` calls the multimodal processor on the appended messages with a synthetic prefix, then trims the synthetic prefix token IDs. This gives CT the correct expanded image placeholder tokens without re-processing old images for rollout token construction.
 
 The processor's pixel tensors from this incremental call are intentionally discarded. The agent loop accumulates original image objects (`agent_data.image_data`) and `_compute_multi_modal_inputs()` later rebuilds full `pixel_values` / `image_grid_thw` from the final token sequence and complete image list.
 

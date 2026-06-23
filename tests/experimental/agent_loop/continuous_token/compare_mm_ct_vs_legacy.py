@@ -13,7 +13,7 @@
 # limitations under the License.
 """Compare multimodal Continuous Token (CT) vs Legacy token generation.
 
-CT mode builds tokens incrementally via build_initial_tokens + merge_tokens.
+CT mode builds tokens incrementally via build_initial_tokens + merge_non_assistant_tokens.
 Legacy mode renders the full message history through the processor every time.
 For a correct CT implementation these must produce identical token sequences.
 
@@ -33,8 +33,8 @@ from typing import Any
 from PIL import Image
 from transformers import AutoProcessor
 
-from verl.utils.chat_template import apply_chat_template
-from verl.utils.continuous_token_wiring import create_continuous_token_builder
+from verl.utils.tokenizer.chat_template import apply_chat_template
+from verl.utils.tokenizer.continuous_token_wiring import create_continuous_token_builder
 from verl.utils.tokenizer import build_multimodal_processor_inputs, normalize_token_ids
 
 
@@ -123,7 +123,7 @@ def run_comparison(model_name: str, family: str) -> list[dict[str, Any]]:
             runtime_ids = legacy_render(
                 processor, tokenizer, builder, sc.messages_prev, sc.prev_images, add_generation_prompt=False
             )
-            merge_result = builder.merge_tokens(sc.messages_prev, sc.messages_full, runtime_ids)
+            merge_result = builder.merge_non_assistant_tokens(sc.messages_prev, sc.messages_full, runtime_ids)
             ct_ids = merge_result.token_ids
             legacy_ids = legacy_render(processor, tokenizer, builder, sc.messages_full, sc.all_images)
 
