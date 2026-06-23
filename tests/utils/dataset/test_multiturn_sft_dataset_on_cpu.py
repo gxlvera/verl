@@ -16,6 +16,7 @@ Test the MultiTurnSFTDataset implementation
 """
 
 import os
+from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from PIL import Image
 from tensordict import TensorDict
 from torch.utils.data import DistributedSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
+from transformers import AutoProcessor, AutoTokenizer
 from transformers.utils import get_json_schema
 
 from verl.utils import hf_processor, hf_tokenizer
@@ -34,6 +36,121 @@ from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
 from verl.utils.model import extract_multi_modal_inputs
 
 custom_model_prefix = Path("~/models").expanduser().resolve()
+
+
+SFT_CT_TEXT_FAMILY_CASES = [
+    ("qwen25", "Qwen/Qwen2.5-0.5B-Instruct"),
+    ("qwen3", "Qwen/Qwen3-0.6B"),
+    ("qwen35", "Qwen/Qwen3.5-0.8B"),
+    ("minimax", "MiniMaxAI/MiniMax-Text-01"),
+    ("minimaxm2", "MiniMaxAI/MiniMax-M2"),
+    ("minimaxm25", "MiniMaxAI/MiniMax-M2.5"),
+    ("minimaxm27", "MiniMaxAI/MiniMax-M2.7"),
+    ("glm47", "zai-org/GLM-4.7-Flash"),
+    ("glm5", "THUDM/GLM-5-9B-Chat"),
+    ("gemma4", "google/gemma-4-27b-it"),
+    ("gptoss", "openai/gpt-oss-20b"),
+    ("deepseek", "deepseek-ai/DeepSeek-V3-0324"),
+]
+
+SFT_CT_TEXT_TOOL_FAMILY_CASES = [
+    ("qwen25", "Qwen/Qwen2.5-0.5B-Instruct"),
+    ("qwen3", "Qwen/Qwen3-0.6B"),
+    ("minimaxm2", "MiniMaxAI/MiniMax-M2"),
+    ("minimaxm25", "MiniMaxAI/MiniMax-M2.5"),
+    ("glm47", "zai-org/GLM-4.7-Flash"),
+    ("deepseek", "deepseek-ai/DeepSeek-V3-0324"),
+]
+
+SFT_CT_VL_FAMILY_CASES = [
+    ("qwen2vl", "Qwen/Qwen2-VL-72B-Instruct", True),
+    ("qwen25vl", "Qwen/Qwen2.5-VL-3B-Instruct", True),
+    ("qwen3vl", "Qwen/Qwen3-VL-2B-Instruct", True),
+    ("mimovl", "XiaomiMiMo/MiMo-VL-7B", False),
+    ("kimivl", "moonshotai/Kimi-VL-A3B-Instruct", False),
+    ("glm4v", "zai-org/GLM-4.5V", False),
+    ("deepseekvl2", "deepseek-ai/deepseek-vl2-tiny", False),
+]
+
+
+def _load_local_tokenizer_or_skip(model_id: str):
+    try:
+        return AutoTokenizer.from_pretrained(model_id, local_files_only=True, trust_remote_code=True)
+    except Exception as exc:
+        pytest.skip(f"Local tokenizer for {model_id!r} is not available: {exc}")
+
+
+def _load_local_processor_or_skip(model_id: str):
+    try:
+        return AutoProcessor.from_pretrained(model_id, local_files_only=True, trust_remote_code=True)
+    except Exception as exc:
+        pytest.skip(f"Local processor for {model_id!r} is not available: {exc}")
+
+
+def _make_text_messages():
+    return [
+        {"role": "user", "content": "Say alpha."},
+        {"role": "assistant", "content": "alpha response."},
+        {"role": "user", "content": "Say beta."},
+        {"role": "assistant", "content": "beta response."},
+    ]
+
+
+def _weather_tool_schema():
+    def get_weather(city: str):
+        """Get weather for a city.
+
+        Args:
+            city: Name of the city to query.
+        """
+        return city
+
+    return [get_json_schema(get_weather)]
+
+
+def _make_tool_messages():
+    return [
+        {"role": "user", "content": "What is the weather in Paris?"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"type": "function", "function": {"name": "get_weather", "arguments": '{"city": "Paris"}'}}
+            ],
+        },
+        {"role": "tool", "name": "get_weather", "content": "sunny"},
+        {"role": "assistant", "content": "It is sunny."},
+    ]
+
+
+def _image_bytes(color: str, size: tuple[int, int] = (64, 48)) -> bytes:
+    image = Image.new("RGB", size, color=color)
+    image_bytes = BytesIO()
+    image.save(image_bytes, format="PNG")
+    return image_bytes.getvalue()
+
+
+def _full_encode_reference(dataset, row: dict, renderer, tools=None):
+    reference_messages = dataset._build_messages(deepcopy(row))
+    candidates = [reference_messages]
+    parsed_messages, parsed = dataset._messages_with_parsed_tool_arguments(reference_messages)
+    if parsed:
+        candidates.append(parsed_messages)
+    last_exception = None
+    for candidate in candidates:
+        try:
+            return renderer.apply_chat_template(
+                candidate,
+                tools=tools,
+                tokenize=True,
+                add_generation_prompt=False,
+                return_dict=True,
+                return_tensors="pt",
+            )["input_ids"][0]
+        except Exception as exc:
+            last_exception = exc
+    assert last_exception is not None
+    raise last_exception
 
 
 class _CanonicalMockTokenizer:
@@ -276,6 +393,131 @@ def test_multiturn_sft_continuous_token_uses_full_processor_encode_for_multimoda
     assert "pixel_values" in item["multi_modal_inputs"]
     assert "image_grid_thw" in item["multi_modal_inputs"]
     assert "mm_token_type_ids" not in item["multi_modal_inputs"]
+
+
+@pytest.mark.parametrize(
+    "family, model_id",
+    SFT_CT_TEXT_FAMILY_CASES,
+    ids=[case[0] for case in SFT_CT_TEXT_FAMILY_CASES],
+)
+def test_multiturn_sft_continuous_token_local_text_family_matrix(family, model_id, tmp_path):
+    tokenizer = _load_local_tokenizer_or_skip(model_id)
+    messages = _make_text_messages()
+    test_file = tmp_path / f"{family}_text.parquet"
+    pd.DataFrame({"messages": [messages]}).to_parquet(test_file)
+
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=None,
+        config={
+            "max_length": 4096,
+            "pad_mode": "no_padding",
+            "truncation": "error",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+    row = pd.read_parquet(test_file).iloc[0].to_dict()
+    full_ids = _full_encode_reference(dataset, row, tokenizer)
+    masked_text = tokenizer.decode(item["input_ids"][item["loss_mask"] == 1], skip_special_tokens=False)
+
+    assert torch.equal(item["input_ids"], full_ids)
+    assert "alpha" in masked_text
+    assert "beta" in masked_text
+    assert item["loss_mask"].shape == item["input_ids"].shape == item["position_ids"].shape
+
+
+@pytest.mark.parametrize(
+    "family, model_id",
+    SFT_CT_TEXT_TOOL_FAMILY_CASES,
+    ids=[case[0] for case in SFT_CT_TEXT_TOOL_FAMILY_CASES],
+)
+def test_multiturn_sft_continuous_token_local_tool_call_family_matrix(family, model_id, tmp_path):
+    tokenizer = _load_local_tokenizer_or_skip(model_id)
+    tools = _weather_tool_schema()
+    messages = _make_tool_messages()
+    test_file = tmp_path / f"{family}_tool.parquet"
+    pd.DataFrame({"messages": [messages], "tools": [tools]}).to_parquet(test_file)
+
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=None,
+        config={
+            "max_length": 4096,
+            "pad_mode": "no_padding",
+            "truncation": "error",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+    row = pd.read_parquet(test_file).iloc[0].to_dict()
+    full_ids = _full_encode_reference(dataset, row, tokenizer, tools=tools)
+    masked_text = tokenizer.decode(item["input_ids"][item["loss_mask"] == 1], skip_special_tokens=False)
+
+    assert torch.equal(item["input_ids"], full_ids)
+    assert "get_weather" in masked_text
+    assert "Paris" in masked_text
+    assert "sunny" in masked_text
+
+
+@pytest.mark.parametrize(
+    "family, model_id, supported",
+    SFT_CT_VL_FAMILY_CASES,
+    ids=[case[0] for case in SFT_CT_VL_FAMILY_CASES],
+)
+def test_multiturn_sft_continuous_token_local_vl_image_family_matrix(family, model_id, supported, tmp_path):
+    if not supported:
+        pytest.xfail(f"{family} SFT canonical CT adapter is not implemented/verified yet")
+    pytest.importorskip("qwen_vl_utils")
+    tokenizer = _load_local_tokenizer_or_skip(model_id)
+    processor = _load_local_processor_or_skip(model_id)
+    messages = [
+        {"role": "user", "content": "<image>Describe this image."},
+        {"role": "assistant", "content": "The image is a red rectangle."},
+        {"role": "user", "content": "What color is it?"},
+        {"role": "assistant", "content": "It is red."},
+    ]
+    test_file = tmp_path / f"{family}_vl.parquet"
+    pd.DataFrame(
+        {
+            "messages": [messages],
+            "images": [[{"bytes": _image_bytes("red")}]],
+            "tools": [[]],
+        }
+    ).to_parquet(test_file)
+
+    dataset = MultiTurnSFTDataset(
+        parquet_files=str(test_file),
+        tokenizer=tokenizer,
+        processor=processor,
+        config={
+            "max_length": 4096,
+            "pad_mode": "no_padding",
+            "truncation": "error",
+            "continuous_token": {"enable": True, "fallback_to_legacy": False},
+        },
+    )
+    item = dataset[0]
+    row = pd.read_parquet(test_file).iloc[0].to_dict()
+    full_ids = _full_encode_reference(dataset, row, processor)
+    masked_text = tokenizer.decode(item["input_ids"][item["loss_mask"] == 1], skip_special_tokens=False)
+    multi_modal_inputs = item["multi_modal_inputs"]
+    image_grid_thw = multi_modal_inputs["image_grid_thw"]
+    image_token_id = processor.image_token_id
+    merge_size = processor.image_processor.merge_size
+    expected_image_tokens = int(image_grid_thw.prod(dim=1).sum().item() // (merge_size**2))
+    actual_image_tokens = int((item["input_ids"] == image_token_id).sum().item())
+    masked_image_tokens = int(((item["input_ids"] == image_token_id) & (item["loss_mask"] == 1)).sum().item())
+
+    assert torch.equal(item["input_ids"], full_ids)
+    assert "red rectangle" in masked_text
+    assert "It is red" in masked_text
+    assert "pixel_values" in multi_modal_inputs
+    assert actual_image_tokens == expected_image_tokens
+    assert masked_image_tokens == 0
+    assert item["position_ids"].shape[0] == 4
 
 
 @pytest.mark.parametrize(

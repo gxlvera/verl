@@ -16,6 +16,7 @@
 Multi-turn SFT dataset that supports training on conversation data with multiple turns
 """
 
+import json
 import logging
 import os
 import re
@@ -37,6 +38,7 @@ from verl.utils.dataset.dataset_utils import DatasetPadMode
 from verl.utils.dataset.vision_utils import process_image, process_video
 from verl.utils.fs import copy_local_path_from_hdfs
 from verl.utils.py_functional import convert_nested_value_to_list_recursive
+from verl.utils.tokenizer import normalize_token_ids
 from verl.utils.tokenizer.chat_template import apply_chat_template, extract_system_prompt_and_generation
 
 logger = logging.getLogger(__file__)
@@ -138,6 +140,7 @@ class MultiTurnSFTDataset(Dataset):
         self.tokenizer: PreTrainedTokenizer = tokenizer
         self.processor = processor
         self._supports_native_assistant_mask = self._chat_template_has_generation_block()
+        self._chat_template_requires_typed_content = False
 
         self._download()
         self._read_files_and_process()
@@ -199,9 +202,42 @@ class MultiTurnSFTDataset(Dataset):
 
         # system prompt: <|im_start|>system\nYou are a helpful assistant.<|im_end|>\n
         # generation prompt: <|im_start|>assistant\n
-        self.system_prompt, self.generation_prompt = extract_system_prompt_and_generation(
-            self.tokenizer, **self.apply_chat_template_kwargs
+        self.system_prompt, self.generation_prompt = self._extract_system_prompt_and_generation()
+
+    def _extract_system_prompt_and_generation(self) -> tuple[list[int], list[int]]:
+        try:
+            return extract_system_prompt_and_generation(self.tokenizer, **self.apply_chat_template_kwargs)
+        except Exception:
+            self._chat_template_requires_typed_content = True
+
+        typed_user_message = {"role": "user", "content": [{"type": "text", "text": ""}]}
+        token1 = normalize_token_ids(
+            self.tokenizer.apply_chat_template(
+                [typed_user_message],
+                add_generation_prompt=False,
+                tokenize=True,
+                **self.apply_chat_template_kwargs,
+            )
         )
+        token2 = normalize_token_ids(
+            self.tokenizer.apply_chat_template(
+                [typed_user_message] * 2,
+                add_generation_prompt=False,
+                tokenize=True,
+                **self.apply_chat_template_kwargs,
+            )
+        )
+        system_prompt = token1[: -(len(token2) - len(token1))]
+        token3 = normalize_token_ids(
+            self.tokenizer.apply_chat_template(
+                [typed_user_message],
+                add_generation_prompt=True,
+                tokenize=True,
+                **self.apply_chat_template_kwargs,
+            )
+        )
+        generation_prompt = token3[len(token1) :]
+        return system_prompt, generation_prompt
 
     def __len__(self):
         return len(self.messages)
@@ -341,6 +377,69 @@ class MultiTurnSFTDataset(Dataset):
             return
         raise ValueError("Unsupported assistant content type for canonical loss mask recovery.")
 
+    @staticmethod
+    def _messages_with_parsed_tool_arguments(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+        normalized = deepcopy(messages)
+        changed = False
+        for message in normalized:
+            if message.get("role") != "assistant":
+                continue
+            tool_calls = message.get("tool_calls") or []
+            if not isinstance(tool_calls, list):
+                continue
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function")
+                if not isinstance(function, dict):
+                    continue
+                arguments = function.get("arguments")
+                if not isinstance(arguments, str):
+                    continue
+                try:
+                    parsed_arguments = json.loads(arguments)
+                except Exception:
+                    continue
+                if isinstance(parsed_arguments, dict):
+                    function["arguments"] = parsed_arguments
+                    changed = True
+        return normalized, changed
+
+    def _apply_full_chat_template_with_retries(
+        self,
+        messages: list[dict],
+        tools: Optional[list[dict[str, Any]]],
+        enable_thinking: Optional[bool],
+        return_offsets_mapping: bool,
+    ) -> tuple[dict[str, Any], list[dict]]:
+        candidates: list[list[dict]] = [messages]
+        parsed_messages, parsed = self._messages_with_parsed_tool_arguments(messages)
+        if parsed:
+            candidates.append(parsed_messages)
+
+        last_exception: Exception | None = None
+        for candidate_messages in candidates:
+            offset_attempts = [return_offsets_mapping]
+            if return_offsets_mapping:
+                offset_attempts.append(False)
+            for use_offsets in offset_attempts:
+                try:
+                    return (
+                        dict(
+                            self._apply_full_chat_template(
+                                candidate_messages,
+                                tools=tools,
+                                enable_thinking=enable_thinking,
+                                return_offsets_mapping=use_offsets,
+                            )
+                        ),
+                        candidate_messages,
+                    )
+                except Exception as exc:
+                    last_exception = exc
+        assert last_exception is not None
+        raise last_exception
+
     def _render_chat_template_text(
         self,
         messages: list[dict],
@@ -451,6 +550,10 @@ class MultiTurnSFTDataset(Dataset):
             if message.get("role") != "assistant":
                 continue
 
+            matched = False
+            if index in char_spans and offset_mapping is not None:
+                matched = self._mask_offset_span(loss_mask, offset_mapping, char_spans[index])
+
             _input_ids, _loss_mask, _, _ = self._process_single_message(
                 index=index,
                 message=message,
@@ -466,11 +569,10 @@ class MultiTurnSFTDataset(Dataset):
                 cursor = target_end
                 continue
 
-            if index in char_spans and offset_mapping is not None:
-                if self._mask_offset_span(loss_mask, offset_mapping, char_spans[index]):
-                    masked_positions = torch.where(loss_mask == 1)[0]
-                    cursor = int(masked_positions[-1].item()) + 1 if len(masked_positions) > 0 else cursor
-                    continue
+            if matched:
+                masked_positions = torch.where(loss_mask == 1)[0]
+                cursor = int(masked_positions[-1].item()) + 1 if len(masked_positions) > 0 else cursor
+                continue
 
             raise ValueError(
                 "Unable to recover canonical SFT loss_mask for an assistant turn. "
@@ -492,6 +594,31 @@ class MultiTurnSFTDataset(Dataset):
             return None
         return assistant_masks
 
+    def _clear_multimodal_token_loss_mask(self, input_ids: torch.Tensor, loss_mask: torch.Tensor):
+        if self.processor is None:
+            return
+
+        multimodal_token_ids = []
+        for attr in (
+            "image_token_id",
+            "video_token_id",
+            "vision_start_token_id",
+            "vision_end_token_id",
+        ):
+            token_id = getattr(self.processor, attr, None)
+            if isinstance(token_id, int):
+                multimodal_token_ids.append(token_id)
+
+        for token in ("<image>", "<video>", "<|image_pad|>", "<|video_pad|>"):
+            try:
+                token_id = self.tokenizer.convert_tokens_to_ids(token)
+            except Exception:
+                token_id = None
+            if isinstance(token_id, int) and token_id >= 0:
+                multimodal_token_ids.append(token_id)
+
+        for token_id in set(multimodal_token_ids):
+            loss_mask[input_ids == token_id] = 0
 
     def _build_messages(self, example: dict):
         """Replace <image> and <video> placeholder in messages with corresponding image and video
@@ -517,6 +644,8 @@ class MultiTurnSFTDataset(Dataset):
 
             if self.image_key not in example and self.video_key not in example:
                 if self.processor is not None:
+                    message["content"] = [{"type": "text", "text": content}]
+                elif self._chat_template_requires_typed_content:
                     message["content"] = [{"type": "text", "text": content}]
                 continue
             assert self.processor is not None, "processor is needed to process image and video"
@@ -627,24 +756,12 @@ class MultiTurnSFTDataset(Dataset):
         tools: Optional[list[dict[str, Any]]],
         enable_thinking: Optional[bool],
     ):
-        try:
-            inputs = dict(
-                self._apply_full_chat_template(
-                    messages,
-                    tools=tools,
-                    enable_thinking=enable_thinking,
-                    return_offsets_mapping=True,
-                )
-            )
-        except Exception:
-            inputs = dict(
-                self._apply_full_chat_template(
-                    messages,
-                    tools=tools,
-                    enable_thinking=enable_thinking,
-                    return_offsets_mapping=False,
-                )
-            )
+        inputs, canonical_messages = self._apply_full_chat_template_with_retries(
+            messages,
+            tools=tools,
+            enable_thinking=enable_thinking,
+            return_offsets_mapping=True,
+        )
         input_ids = inputs.pop("input_ids")[0]
         attention_mask = inputs.pop("attention_mask")[0]
         encoded_offsets = inputs.pop("offset_mapping", None)
@@ -653,19 +770,20 @@ class MultiTurnSFTDataset(Dataset):
         loss_mask = self._native_assistant_loss_mask(input_ids, assistant_masks)
         if loss_mask is None:
             try:
-                full_text = self._render_chat_template_text(messages, tools, enable_thinking)
+                full_text = self._render_chat_template_text(canonical_messages, tools, enable_thinking)
                 offset_mapping = self._get_offset_mapping(input_ids, full_text, encoded_offsets)
             except Exception:
                 full_text = ""
                 offset_mapping = None
             loss_mask = self._build_canonical_loss_mask(
                 input_ids=input_ids,
-                messages=messages,
+                messages=canonical_messages,
                 tools=tools,
                 enable_thinking=enable_thinking,
                 full_text=full_text,
                 offset_mapping=offset_mapping,
             )
+        self._clear_multimodal_token_loss_mask(input_ids, loss_mask)
         assert input_ids.shape == loss_mask.shape == attention_mask.shape, (
             f"Shape mismatch: {input_ids.shape}, {loss_mask.shape}, {attention_mask.shape}"
         )
