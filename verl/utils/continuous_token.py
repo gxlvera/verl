@@ -816,7 +816,7 @@ class VLContinuousTokenMixin:
         value = getattr(ip, self.merge_size_attr, None)
         if value is None:
             return 2
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, list | tuple):
             value = value[0]
         return int(value)
 
@@ -842,9 +842,7 @@ class VLContinuousTokenMixin:
                 if j < n:
                     spans.append((i + 1, j))
                 else:
-                    logger.warning(
-                        "Unmatched %s at position %d", self.vision_start_token, i
-                    )
+                    logger.warning("Unmatched %s at position %d", self.vision_start_token, i)
                 i = j + 1
             else:
                 i += 1
@@ -892,13 +890,18 @@ class VLContinuousTokenMixin:
 
         prepared = self._prepare_mm_messages(messages)
         text = apply_chat_template(
-            self.tokenizer, prepared, tokenize=False,
-            add_generation_prompt=add_generation_prompt, **template_kwargs,
+            self.tokenizer,
+            prepared,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            **template_kwargs,
         )
 
         proc_kwargs = dict(mm_processor_kwargs or {})
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=text, images=images if images else None,
+            self.processor,
+            text=text,
+            images=images if images else None,
             mm_processor_kwargs=proc_kwargs if proc_kwargs else None,
         )
         return normalize_token_ids(processor_output["input_ids"])
@@ -920,25 +923,32 @@ class VLContinuousTokenMixin:
 
         prefix_msgs = [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE]
         prefix_text = apply_chat_template(
-            self.tokenizer, prefix_msgs, tokenize=False,
-            add_generation_prompt=False, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs,
+            tokenize=False,
+            add_generation_prompt=False,
+            **template_kwargs,
         )
-        prefix_token_ids = normalize_token_ids(
-            self.tokenizer.encode(prefix_text, add_special_tokens=False)
-        )
+        prefix_token_ids = normalize_token_ids(self.tokenizer.encode(prefix_text, add_special_tokens=False))
 
         prepared = self._prepare_mm_messages(messages)
         full_text = apply_chat_template(
-            self.tokenizer, prefix_msgs + prepared, tokenize=False,
-            add_generation_prompt=True, **template_kwargs,
+            self.tokenizer,
+            prefix_msgs + prepared,
+            tokenize=False,
+            add_generation_prompt=True,
+            **template_kwargs,
         )
         processor_output = build_multimodal_processor_inputs(
-            self.processor, text=full_text, images=images if images else None,
+            self.processor,
+            text=full_text,
+            images=images if images else None,
         )
 
         all_ids = normalize_token_ids(processor_output["input_ids"])
         return _token_suffix_after_prefix(
-            prefix_token_ids, all_ids,
+            prefix_token_ids,
+            all_ids,
             context="multimodal synthetic prefix",
         )
 
@@ -953,7 +963,7 @@ class VLContinuousTokenMixin:
             return self._render_tokens(messages, add_generation_prompt=True, tools=tools)
         return self.render_tokens_with_mm(messages, images, add_generation_prompt=True, tools=tools)
 
-    def merge_tokens(
+    def merge_non_assistant_tokens(
         self,
         previous_messages: list[dict[str, Any]],
         updated_messages: list[dict[str, Any]],
@@ -961,14 +971,14 @@ class VLContinuousTokenMixin:
         *,
         tools: list[dict[str, Any]] | None = None,
     ) -> MergeResult:
-        """Merge tokens with multimodal awareness.
+        """Merge appended non-assistant messages with multimodal awareness.
 
         If new images appear, uses single processor call (dummy+trim) to get
         incremental token_ids, then applies text-family boundary handling via
         ``_merge_non_assistant_token_ids`` (provided by parent class through MRO).
         """
         self._assert_append_only(previous_messages, updated_messages)
-        appended_messages = updated_messages[len(previous_messages):]
+        appended_messages = updated_messages[len(previous_messages) :]
 
         new_images = self._extract_images_from_messages(appended_messages)
         if not new_images:
@@ -977,9 +987,7 @@ class VLContinuousTokenMixin:
             )
             return self._merge_non_assistant_token_ids(runtime_token_ids, appended_ids)
 
-        appended_token_ids = self._render_incremental_with_mm(
-            appended_messages, new_images, tools=tools
-        )
+        appended_token_ids = self._render_incremental_with_mm(appended_messages, new_images, tools=tools)
         return self._merge_non_assistant_token_ids(runtime_token_ids, appended_token_ids)
 
 
@@ -1008,9 +1016,7 @@ class MiMoVLContinuousTokenBuilder(VLContinuousTokenMixin, QwenContinuousTokenBu
     def _prepare_mm_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return self._flatten_multimodal_content(messages)
 
-    def _flatten_multimodal_content(
-        self, messages: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _flatten_multimodal_content(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Convert list-content to string with vision placeholders for MiMo-VL template."""
         flat: list[dict[str, Any]] = []
         for msg in messages:
@@ -1060,9 +1066,6 @@ class KimiVLContinuousTokenBuilder(VLContinuousTokenMixin, ContinuousTokenBuilde
     vision_start_token = "<|media_start|>"
     vision_end_token = "<|media_end|>"
     merge_size_attr = "merge_kernel_size"
-
-
-
 
 
 class DeepSeekVL2ContinuousTokenBuilder(DeepSeekContinuousTokenBuilder):
@@ -1127,7 +1130,10 @@ class DeepSeekVL2ContinuousTokenBuilder(DeepSeekContinuousTokenBuilder):
         return images
 
     def _to_vl2_conversation(
-        self, messages: list[dict[str, Any]], images: list[Any], add_generation_prompt: bool = True,
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any],
+        add_generation_prompt: bool = True,
     ) -> tuple[list[dict[str, Any]], list[Any]]:
         """Convert OpenAI-style messages to VL2 conversation format."""
         conv: list[dict[str, Any]] = []
@@ -1164,16 +1170,23 @@ class DeepSeekVL2ContinuousTokenBuilder(DeepSeekContinuousTokenBuilder):
         return conv, images
 
     def _render_via_processor(
-        self, messages: list[dict[str, Any]], images: list[Any], add_generation_prompt: bool = True,
+        self,
+        messages: list[dict[str, Any]],
+        images: list[Any],
+        add_generation_prompt: bool = True,
     ) -> list[int]:
         """Render messages through DeepseekVLV2Processor."""
         from verl.utils.tokenizer import normalize_token_ids
+
         conv, all_images = self._to_vl2_conversation(messages, images, add_generation_prompt)
         out = self.processor.__call__(conversations=conv, images=all_images, force_batchify=True)
         return normalize_token_ids(out.input_ids[0].tolist())
 
     def build_initial_tokens(
-        self, messages: list[dict[str, Any]], *, tools: list[dict[str, Any]] | None = None,
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
         images = self._extract_images_from_messages(messages)
         if not images:

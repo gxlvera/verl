@@ -333,7 +333,7 @@ class TestWiringVLFactory:
 
 
 # =============================================================================
-# Integration tests: VL builder build_initial_tokens + merge_tokens end-to-end
+# Integration tests: VL builder build_initial_tokens + merge_non_assistant_tokens end-to-end
 # =============================================================================
 
 
@@ -459,8 +459,8 @@ class TestQwenVLBuildInitialTokens:
         assert token_ids.count(151655) == 4
 
 
-class TestQwenVLMergeTokens:
-    """Integration test for QwenVL merge_tokens with images in appended messages."""
+class TestQwenVLMergeNonAssistantTokens:
+    """Integration test for QwenVL merge_non_assistant_tokens with images in appended messages."""
 
     def setup_method(self):
         from verl.utils.continuous_token import QwenVLContinuousTokenBuilder
@@ -477,7 +477,7 @@ class TestQwenVLMergeTokens:
             {"role": "tool", "content": "result", "tool_call_id": "1"},
         ]
         runtime_ids = [151644, 1000, 1001, 1002, 151645, 151644]
-        result = self.builder.merge_tokens(previous, updated, runtime_ids)
+        result = self.builder.merge_non_assistant_tokens(previous, updated, runtime_ids)
         assert isinstance(result, MergeResult)
         assert result.kind == "non_assistant"
 
@@ -496,7 +496,7 @@ class TestQwenVLMergeTokens:
         ]
         # Simulate runtime token state
         runtime_ids = [151644, 1000, 1001, 1002, 151645, 151644]
-        result = self.builder.merge_tokens(previous, updated, runtime_ids)
+        result = self.builder.merge_non_assistant_tokens(previous, updated, runtime_ids)
         assert isinstance(result, MergeResult)
         assert result.kind == "non_assistant"
         assert 151655 in result.token_ids
@@ -526,7 +526,7 @@ class TestQwenVLMergeTokens:
         ]
         runtime_ids = [151644, 1000, 1001, 1002, 151645, 151644]
         with pytest.raises(ValueError, match="multimodal synthetic prefix"):
-            builder.merge_tokens(previous, updated, runtime_ids)
+            builder.merge_non_assistant_tokens(previous, updated, runtime_ids)
 
 
 @pytest.mark.parametrize(
@@ -563,4 +563,4 @@ def test_other_vl_builders_reject_non_prefix_processor_output(builder_name):
     ]
     runtime_ids = [151644, 1000, 1001, 1002, 151645, 151644]
     with pytest.raises(ValueError, match="multimodal synthetic prefix"):
-        builder.merge_tokens(previous, updated, runtime_ids)
+        builder.merge_non_assistant_tokens(previous, updated, runtime_ids)

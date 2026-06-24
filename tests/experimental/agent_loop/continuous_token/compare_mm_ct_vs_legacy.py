@@ -13,7 +13,7 @@
 # limitations under the License.
 """Compare multimodal Continuous Token (CT) vs Legacy token generation.
 
-CT mode builds tokens incrementally via build_initial_tokens + merge_tokens.
+CT mode builds tokens incrementally via build_initial_tokens + merge_non_assistant_tokens.
 Legacy mode renders the full message history through the processor every time.
 For a correct CT implementation these must produce identical token sequences.
 
@@ -22,6 +22,7 @@ Usage (requires GPU + real model weights):
         --model Qwen/Qwen2.5-VL-7B-Instruct --family qwen25vl
         --model XiaomiMiMo/MiMo-VL-7B-RL --family mimovl
 """
+
 from __future__ import annotations
 
 import argparse
@@ -52,10 +53,15 @@ def build_scenarios() -> list[Scenario]:
     img_blue = Image.new("RGB", (128, 128), color="blue")
     img_green = Image.new("RGB", (256, 256), color="green")
 
-    s1_msgs = [{"role": "user", "content": [
-        {"type": "image", "image": img_red},
-        {"type": "text", "text": "What is this?"},
-    ]}]
+    s1_msgs = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": img_red},
+                {"type": "text", "text": "What is this?"},
+            ],
+        }
+    ]
 
     s2_prev = [
         {"role": "user", "content": [{"type": "image", "image": img_red}, {"type": "text", "text": "Describe."}]},
@@ -96,7 +102,7 @@ def legacy_render(processor, tokenizer, builder, messages, images, add_generatio
 
 def run_comparison(model_name: str, family: str) -> list[dict[str, Any]]:
     print("\n" + "=" * 70)
-    print("Model: %s (family=%s)" % (model_name, family))
+    print(f"Model: {model_name} (family={family})")
     print("=" * 70)
 
     processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
@@ -114,7 +120,7 @@ def run_comparison(model_name: str, family: str) -> list[dict[str, Any]]:
     results = []
 
     for sc in scenarios:
-        print("\n  [%s]" % sc.name)
+        print(f"\n  [{sc.name}]")
 
         if not sc.messages_prev:
             ct_ids = builder.build_initial_tokens(sc.messages_full)
@@ -123,7 +129,7 @@ def run_comparison(model_name: str, family: str) -> list[dict[str, Any]]:
             runtime_ids = legacy_render(
                 processor, tokenizer, builder, sc.messages_prev, sc.prev_images, add_generation_prompt=False
             )
-            merge_result = builder.merge_tokens(sc.messages_prev, sc.messages_full, runtime_ids)
+            merge_result = builder.merge_non_assistant_tokens(sc.messages_prev, sc.messages_full, runtime_ids)
             ct_ids = merge_result.token_ids
             legacy_ids = legacy_render(processor, tokenizer, builder, sc.messages_full, sc.all_images)
 
@@ -149,7 +155,7 @@ def run_comparison(model_name: str, family: str) -> list[dict[str, Any]]:
 
         results.append(result)
         status = "MATCH" if match else "MISMATCH"
-        print("    CT=%d, Legacy=%d -> %s" % (len(ct_ids), len(legacy_ids), status))
+        print(f"    CT={len(ct_ids)}, Legacy={len(legacy_ids)} -> {status}")
 
     return results
 
@@ -168,7 +174,7 @@ def main():
     assert len(args.model) == len(args.family), "--model and --family must be paired"
 
     all_results = []
-    for model, family in zip(args.model, args.family):
+    for model, family in zip(args.model, args.family, strict=False):
         all_results.extend(run_comparison(model, family))
 
     # Summary
@@ -178,19 +184,19 @@ def main():
     total = len(all_results)
     matches = sum(1 for r in all_results if r["match"])
     mismatches = [r for r in all_results if not r["match"]]
-    print("  Total scenarios: %d" % total)
-    print("  Matches: %d" % matches)
-    print("  Mismatches: %d" % len(mismatches))
+    print(f"  Total scenarios: {total}")
+    print(f"  Matches: {matches}")
+    print(f"  Mismatches: {len(mismatches)}")
 
     if mismatches:
         print("\n  MISMATCH DETAILS:")
         for r in mismatches:
-            print("    %s / %s: CT=%d, Legacy=%d" % (r["model"], r["scenario"], r["ct_length"], r["legacy_length"]))
+            print(f"    {r['model']} / {r['scenario']}: CT={r['ct_length']}, Legacy={r['legacy_length']}")
 
     if args.output:
         with open(args.output, "w") as f:
             json.dump(all_results, f, indent=2)
-        print("\n  Results written to: %s" % args.output)
+        print(f"\n  Results written to: {args.output}")
 
     sys.exit(0 if not mismatches else 1)
 

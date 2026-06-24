@@ -12,7 +12,7 @@
 
 For each scenario, we compare two paths:
 
-- **CT (Continuous Token)**: `build_initial_tokens` for turn 1, then `merge_tokens` for subsequent turns. Tokens are built incrementally without re-encoding prior history.
+- **CT (Continuous Token)**: `build_initial_tokens` for turn 1, then `merge_non_assistant_tokens` for subsequent turns. Tokens are built incrementally without re-encoding prior history.
 - **Legacy**: Full `apply_chat_template` + `processor(text, images)` render of the entire message history every turn.
 
 A correct CT implementation must produce **identical token sequences** to the legacy path.
@@ -83,7 +83,7 @@ A correct CT implementation must produce **identical token sequences** to the le
 The multimodal Continuous Token implementation produces **identical token sequences** to the legacy full-re-encode path across all tested scenarios. This confirms:
 
 1. `build_initial_tokens` correctly renders the initial prompt with images through the processor.
-2. `merge_tokens` correctly handles incremental image additions (new `pixel_values` delta slicing at raw patch boundaries `t*h*w`).
+2. `merge_non_assistant_tokens` correctly handles incremental image additions (new `pixel_values` delta slicing at raw patch boundaries `t*h*w`).
 3. Text-only turns after image turns preserve the full context correctly.
 4. The `_flatten_multimodal_content` workaround for MiMo-VL's template limitation produces identical output to direct list-content rendering (as in Qwen2.5-VL).
 
