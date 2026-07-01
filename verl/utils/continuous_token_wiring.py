@@ -25,14 +25,17 @@ from verl.utils.continuous_token import (
     DeepSeekContinuousTokenBuilder,
     DeepSeekVL2ContinuousTokenBuilder,
     Gemma4ContinuousTokenBuilder,
+    Gemma4VLContinuousTokenBuilder,
     GLM4VContinuousTokenBuilder,
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
     KimiVLContinuousTokenBuilder,
     MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
+    MiniMaxVLContinuousTokenBuilder,
     QwenContinuousTokenBuilder,
     QwenVLContinuousTokenBuilder,
+    VLContinuousTokenBuilder,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,10 +58,13 @@ class ContinuousTokenModelFamily(StrEnum):
     GPTOSS = "gptoss"
     DEEPSEEK = "deepseek"
     # Multimodal (VL) families
+    VL_DEFAULT = "vldefault"
     QWEN_VL = "qwenvl"
     QWEN25_VL = "qwen25vl"
     QWEN3_VL = "qwen3vl"
     MIMO_VL = "mimovl"
+    MINIMAX_VL = "minimaxvl"
+    GEMMA4_VL = "gemma4vl"
     KIMI_VL = "kimivl"
     GLM4V = "glm4v"
     DEEPSEEK_VL2 = "deepseekvl2"
@@ -80,16 +86,28 @@ _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] 
     ContinuousTokenModelFamily.GPTOSS: GptOssContinuousTokenBuilder,
     ContinuousTokenModelFamily.DEEPSEEK: DeepSeekContinuousTokenBuilder,
     # Multimodal (VL) families
+    ContinuousTokenModelFamily.VL_DEFAULT: VLContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN_VL: QwenVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN25_VL: QwenVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN3_VL: QwenVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.MIMO_VL: MiMoVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.MINIMAX_VL: MiniMaxVLContinuousTokenBuilder,
+    ContinuousTokenModelFamily.GEMMA4_VL: Gemma4VLContinuousTokenBuilder,
     ContinuousTokenModelFamily.KIMI_VL: KimiVLContinuousTokenBuilder,
     ContinuousTokenModelFamily.GLM4V: GLM4VContinuousTokenBuilder,
     ContinuousTokenModelFamily.DEEPSEEK_VL2: DeepSeekVL2ContinuousTokenBuilder,
 }
 
 CONTINUOUS_TOKEN_BUILDER_FAMILIES = tuple(family.value for family in _CONTINUOUS_TOKEN_BUILDER_REGISTRY)
+
+# Unified checkpoints whose model name carries no ``vl`` marker (so name-based
+# inference resolves to the text family) but that can still be driven in vision
+# mode. When a multimodal processor is supplied we upgrade the text family to its
+# VL counterpart so rendering goes through the processor chat template.
+_TEXT_TO_VL_FAMILY: dict[ContinuousTokenModelFamily, ContinuousTokenModelFamily] = {
+    ContinuousTokenModelFamily.DEFAULT: ContinuousTokenModelFamily.VL_DEFAULT,
+    ContinuousTokenModelFamily.GEMMA4: ContinuousTokenModelFamily.GEMMA4_VL,
+}
 
 
 def get_continuous_token_builder_class(model_family: str | ContinuousTokenModelFamily) -> type[Any]:
@@ -153,6 +171,9 @@ def infer_continuous_token_model_family(
     # MiMo-VL
     if any(marker in haystack for marker in ("mimo-vl", "mimo_vl", "mimovl")):
         return ContinuousTokenModelFamily.MIMO_VL
+    # MiniMax-VL (e.g. MiniMax-VL-01) — match before text minimax families
+    if any(marker in haystack for marker in ("minimax-vl", "minimax_vl")) or "minimaxvl" in compact:
+        return ContinuousTokenModelFamily.MINIMAX_VL
     # Qwen3-VL / Qwen3-VL-MoE
     if any(marker in haystack for marker in ("qwen3-vl", "qwen3_vl")) or "qwen3vl" in compact:
         return ContinuousTokenModelFamily.QWEN3_VL
@@ -229,11 +250,24 @@ def create_continuous_token_builder(
         tokenizer=tokenizer,
         tokenizer_name_or_path=tokenizer_name_or_path,
     )
+    # VL upgrade: when the family resolves to a text family that has a VL
+    # counterpart (the generic ``default`` with no model-specific match, or a
+    # unified text+vision checkpoint such as Gemma4 whose name carries no ``vl``
+    # marker) but a multimodal processor is supplied, use the VL builder so
+    # rendering goes through the processor chat template.
+    if _is_multimodal_processor(processor) and resolved_family in _TEXT_TO_VL_FAMILY:
+        upgraded_family = _TEXT_TO_VL_FAMILY[resolved_family]
+        logger.info(
+            "Multimodal processor detected with family %s; upgrading to VL family %s.",
+            resolved_family,
+            upgraded_family,
+        )
+        resolved_family = upgraded_family
     builder_cls = get_continuous_token_builder_class(resolved_family)
     logger.info("Creating Continuous Token builder: family=%s class=%s", resolved_family, builder_cls)
 
     # VL builders require processor as positional arg
-    if hasattr(builder_cls, "supports_multimodal") and builder_cls.supports_multimodal():
+    if builder_cls.supports_multimodal():
         if processor is None:
             raise ValueError(
                 f"Multimodal builder {builder_cls.__name__} requires a processor, but none was provided. "
@@ -242,6 +276,11 @@ def create_continuous_token_builder(
         return builder_cls(tokenizer, processor, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
 
     return builder_cls(tokenizer, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
+
+
+def _is_multimodal_processor(processor: Any | None) -> bool:
+    """Whether ``processor`` is a multimodal processor (has an image processor)."""
+    return processor is not None and getattr(processor, "image_processor", None) is not None
 
 
 def _normalize_model_family(model_family: str | ContinuousTokenModelFamily) -> ContinuousTokenModelFamily:

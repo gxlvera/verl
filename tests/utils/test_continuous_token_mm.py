@@ -66,16 +66,6 @@ class TestBaseClassMMHooks:
         assert ContinuousTokenBuilder.supports_multimodal() is False
         assert self.builder.supports_multimodal() is False
 
-    def test_count_vision_tokens_raises(self):
-        """Base class count_vision_tokens should raise NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="does not implement count_vision_tokens"):
-            self.builder.count_vision_tokens((1, 4, 4))
-
-    def test_extract_vision_placeholders_raises(self):
-        """Base class extract_vision_placeholders should raise NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="does not implement extract_vision_placeholders"):
-            self.builder.extract_vision_placeholders([1, 2, 3, 4])
-
     def test_render_tokens_with_mm_raises(self):
         """Base class render_tokens_with_mm should raise NotImplementedError."""
         with pytest.raises(NotImplementedError, match="does not implement render_tokens_with_mm"):
@@ -164,45 +154,6 @@ class TestQwenVLContinuousTokenBuilder:
     def test_supports_multimodal(self):
         assert self.builder.supports_multimodal() is True
 
-    def test_count_vision_tokens_single_image(self):
-        """t=1, h=28, w=28, merge=2 → 1 * 14 * 14 = 196."""
-        count = self.builder.count_vision_tokens((1, 28, 28))
-        assert count == 196
-
-    def test_count_vision_tokens_video(self):
-        """t=4, h=14, w=14, merge=2 → 4 * 7 * 7 = 196."""
-        count = self.builder.count_vision_tokens((4, 14, 14))
-        assert count == 196
-
-    def test_extract_vision_placeholders(self):
-        """Should find vision spans between start and end markers."""
-        # <|vision_start|>=151652, <|image_pad|>=151655, <|vision_end|>=151653
-        token_ids = [1, 2, 151652, 151655, 151655, 151655, 151653, 3, 4]
-        spans = self.builder.extract_vision_placeholders(token_ids)
-        assert spans == [(3, 6)]  # indices of the pad tokens
-
-    def test_extract_vision_placeholders_multiple_images(self):
-        """Should find multiple vision spans."""
-        token_ids = [
-            151652,
-            151655,
-            151655,
-            151653,  # image 1: indices 1-3
-            10,
-            20,
-            151652,
-            151655,
-            151653,  # image 2: indices 7-8
-        ]
-        spans = self.builder.extract_vision_placeholders(token_ids)
-        assert spans == [(1, 3), (7, 8)]
-
-    def test_extract_vision_placeholders_no_images(self):
-        """No vision markers → empty list."""
-        token_ids = [1, 2, 3, 4, 5]
-        spans = self.builder.extract_vision_placeholders(token_ids)
-        assert spans == []
-
     def test_merge_inherits_qwen_newline_patch(self):
         """VL builder should still insert newline after im_end (from QwenBuilder)."""
         result = self.builder._merge_non_assistant_token_ids([100, 151645], [10, 20])
@@ -243,15 +194,6 @@ class TestMiMoVLContinuousTokenBuilder:
 
     def test_supports_multimodal(self):
         assert self.builder.supports_multimodal() is True
-
-    def test_count_vision_tokens(self):
-        count = self.builder.count_vision_tokens((1, 28, 28))
-        assert count == 196
-
-    def test_extract_vision_placeholders(self):
-        token_ids = [1, 151652, 151655, 151655, 151653, 2]
-        spans = self.builder.extract_vision_placeholders(token_ids)
-        assert spans == [(2, 4)]
 
     def test_merge_inherits_mimo_newline_patch(self):
         """MiMo-VL should still insert newline after im_end (from MiMoBuilder)."""
