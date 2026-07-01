@@ -50,7 +50,13 @@ class SingleTurnAgentLoop(AgentLoopBase):
             not multi_modal_data or self.continuous_token_builder.supports_multimodal()
         )
         if use_continuous_token:
-            prompt_ids = await self.ct_build_initial_tokens(messages)
+            prompt_ids = await self.ct_build_initial_tokens(
+                messages,
+                images=images,
+                videos=videos,
+                audios=audios,
+                mm_processor_kwargs=mm_processor_kwargs,
+            )
         else:
             prompt_ids = await self.apply_chat_template(
                 messages,

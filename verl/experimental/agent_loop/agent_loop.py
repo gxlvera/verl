@@ -243,7 +243,7 @@ class AgentLoopBase(ABC):
                 tokenizer_name_or_path=model_config.tokenizer_path,
             )
             builder_cls = get_continuous_token_builder_class(resolved_family)
-            needs_processor = hasattr(builder_cls, "supports_multimodal") and builder_cls.supports_multimodal()
+            needs_processor = builder_cls.supports_multimodal()
 
             if needs_processor and self.processor is None:
                 raise ValueError(
@@ -313,12 +313,44 @@ class AgentLoopBase(ABC):
         self,
         messages: list[dict],
         tools: list[dict] = None,
+        images: list[Image.Image] = None,
+        videos: list[tuple[torch.Tensor, dict]] = None,
+        audios: list[Any] = None,
+        mm_processor_kwargs: Optional[dict[str, Any]] = None,
     ) -> list[int]:
-        """Build the initial prompt token ids with Continuous Token."""
+        """Build the initial prompt token ids with Continuous Token.
+
+        Multimodal inputs are forwarded to the builder so that VL builders can
+        render placeholder spans through the processor. Text-only builders accept
+        and ignore these arguments.
+        """
         prompt_ids = await self.loop.run_in_executor(
             None,
-            lambda: self.continuous_token_builder.build_initial_tokens(messages, tools=tools),
+            lambda: self.continuous_token_builder.build_initial_tokens(
+                messages,
+                tools=tools,
+                images=images,
+                videos=videos,
+                audios=audios,
+                mm_processor_kwargs=mm_processor_kwargs,
+            ),
         )
+
+        # Mirror the response-side ``response_ids[:response_length]`` cap on the prompt side:
+        # every prompt produced by the agent loop must fit in ``rollout.prompt_length`` so that
+        # ``_pad_token_ids`` (and downstream ``torch.cat``) can rely on uniform shapes.
+        # Multimodal prompts cannot be sliced here because placeholder tokens must remain
+        # aligned 1:1 with ``multi_modal_inputs`` features, so we fail loudly instead.
+        prompt_length = self.rollout_config.prompt_length
+        if (images or videos or audios) and len(prompt_ids) > prompt_length:
+            raise ValueError(
+                f"Multimodal prompt produced {len(prompt_ids)} tokens, exceeding "
+                f"rollout.prompt_length={prompt_length}. Truncating multimodal token "
+                f"sequences corrupts vision/audio feature alignment, so this is treated "
+                f"as a configuration error. Reduce the multimodal input size "
+                f"(e.g. ``total_pixels`` / ``max_pixels`` / fps / number of frames) or "
+                f"increase ``rollout.prompt_length``."
+            )
         return self._cap_text_prompt_length(prompt_ids)
 
     async def ct_merge_non_assistant_msg(
@@ -372,19 +404,6 @@ class AgentLoopBase(ABC):
     def _cap_text_prompt_length(self, prompt_ids: list[int]) -> list[int]:
         prompt_length = self.rollout_config.prompt_length
         if len(prompt_ids) > prompt_length:
-            # VL builders: skip truncation to avoid splitting vision token spans
-            if (
-                self.continuous_token_builder is not None
-                and hasattr(self.continuous_token_builder, "supports_multimodal")
-                and self.continuous_token_builder.supports_multimodal()
-            ):
-                logger.warning(
-                    "Prompt of %d tokens exceeds rollout.prompt_length=%d but truncation is "
-                    "skipped for multimodal builder to preserve vision token integrity.",
-                    len(prompt_ids),
-                    prompt_length,
-                )
-                return prompt_ids
             logger.warning(
                 "Prompt of %d tokens exceeds rollout.prompt_length=%d; left-truncating.",
                 len(prompt_ids),
