@@ -92,9 +92,7 @@ def build_scenarios() -> list[Scenario]:
     ]
 
 
-def legacy_render(processor, tokenizer, builder, messages, images, add_generation_prompt=True):
-    if hasattr(builder, "_flatten_multimodal_content"):
-        messages = builder._flatten_multimodal_content(messages)
+def legacy_render(processor, tokenizer, messages, images, add_generation_prompt=True):
     text = apply_chat_template(tokenizer, messages, tokenize=False, add_generation_prompt=add_generation_prompt)
     out = build_multimodal_processor_inputs(processor, text=text, images=images if images else None)
     return normalize_token_ids(out["input_ids"])
@@ -124,14 +122,14 @@ def run_comparison(model_name: str, family: str) -> list[dict[str, Any]]:
 
         if not sc.messages_prev:
             ct_ids = builder.build_initial_tokens(sc.messages_full)
-            legacy_ids = legacy_render(processor, tokenizer, builder, sc.messages_full, sc.all_images)
+            legacy_ids = legacy_render(processor, tokenizer, sc.messages_full, sc.all_images)
         else:
             runtime_ids = legacy_render(
-                processor, tokenizer, builder, sc.messages_prev, sc.prev_images, add_generation_prompt=False
+                processor, tokenizer, sc.messages_prev, sc.prev_images, add_generation_prompt=False
             )
             merge_result = builder.merge_non_assistant_tokens(sc.messages_prev, sc.messages_full, runtime_ids)
             ct_ids = merge_result.token_ids
-            legacy_ids = legacy_render(processor, tokenizer, builder, sc.messages_full, sc.all_images)
+            legacy_ids = legacy_render(processor, tokenizer, sc.messages_full, sc.all_images)
 
         match = ct_ids == legacy_ids
         result = {
