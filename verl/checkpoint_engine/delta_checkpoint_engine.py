@@ -39,8 +39,8 @@ import zmq
 with patch("importlib.metadata.distributions", return_value=[]):
     import cupy as cp
 
-from verl.workers.rollout.delta_sync import DeltaState, iter_delta_flushes
-from verl.workers.rollout.delta_sync.encode import DeltaParam, checksum as _checksum, decode_chunk
+from .delta_sync import DeltaState, iter_delta_flushes
+from .delta_sync.encode import DeltaParam, checksum as _checksum, decode_chunk
 
 from .base import CheckpointEngineRegistry
 from .nccl_checkpoint_engine import MasterMetadata, NCCLCheckpointEngine

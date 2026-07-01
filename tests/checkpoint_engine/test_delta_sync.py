@@ -30,11 +30,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from verl.workers.rollout.delta_sync import (
+from verl.checkpoint_engine.delta_sync import (
     DeltaState,
     iter_delta_flushes,
 )
-from verl.workers.rollout.delta_sync.encode import decode_chunk
+from verl.checkpoint_engine.delta_sync.encode import decode_chunk
 
 
 def _weights_gen(named: list[tuple[str, torch.Tensor]]):
