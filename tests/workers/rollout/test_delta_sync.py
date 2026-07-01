@@ -178,3 +178,69 @@ def test_dtype_agnostic_diff_fp32():
     assert flushes
     for flush in flushes:
         _round_trip_one_flush(flush, truth)
+
+
+def _apply_flushes_to_mirror(mirror: dict[str, torch.Tensor], flushes) -> None:
+    """Reproduce DeltaCheckpointEngine.receive_weights' mirror-combine in-process.
+
+    Decodes each flush and overwrites only the changed (non-NaN) positions into
+    the running full-weight mirror -- exactly what the rollout worker does before
+    handing full tensors to ``server_adapter.update_weights``. No GPU / NCCL /
+    SGLang needed: the transport only moves bytes, so the lossless guarantee is
+    fully exercised by decode + combine.
+    """
+    for flush in flushes:
+        decoded = decode_chunk(
+            flush.encoding,
+            flush.positions_cpu.numpy().tobytes(),
+            flush.values_gpu,
+            flush.params,
+        )
+        for name, recv in decoded.items():
+            mask = ~torch.isnan(recv)
+            mirror[name][mask] = recv[mask]
+
+
+@pytest.mark.parametrize("encoding", ["indices", "deltas"])
+def test_delta_result_equals_full_sync(encoding: str):
+    """The weights a rollout ends up with via delta sync must be byte-identical
+    to what the old full-weight path delivers (i.e. the trainer's current W).
+
+    full path  -> rollout receives every tensor verbatim  == W_new
+    delta path -> rollout starts from W_old mirror, applies only the changed
+                  positions                                  == W_old + delta
+    Assert the two are bit-equal for every parameter, across multiple steps.
+    """
+    state = DeltaState()
+    named = _make_named()
+
+    # Seed the trainer snapshot from W0 and initialize the rollout mirror to the
+    # same W0 (both sides loaded the identical init checkpoint).
+    list(iter_delta_flushes(_weights_gen(named), state, encoding=encoding, bucket_bytes=1 << 20))
+    mirror = {n: t.clone() for n, t in named}
+
+    cur_named = named
+    for step in range(3):
+        # Trainer takes a step: mutate a sparse, step-dependent set of positions.
+        new_named = []
+        for i, (name, t) in enumerate(cur_named):
+            new = t.clone()
+            flat = new.view(-1)
+            idx = torch.tensor([1 + step, 17, 200 + 5 * i, 511], dtype=torch.int64) % flat.numel()
+            flat[idx] = flat[idx] + 0.25 * (step + 1)
+            new_named.append((name, new))
+        cur_named = new_named
+
+        # full path reference: the rollout would just receive W_new in full.
+        full_result = {n: t.clone() for n, t in new_named}
+
+        # delta path: sender diffs vs snapshot, receiver applies onto its mirror.
+        flushes = list(
+            iter_delta_flushes(_weights_gen(new_named), state, encoding=encoding, bucket_bytes=1 << 20)
+        )
+        _apply_flushes_to_mirror(mirror, flushes)
+
+        for name, full in full_result.items():
+            assert torch.equal(mirror[name].view(torch.uint8), full.view(torch.uint8)), (
+                f"delta != full at step {step} for {name}"
+            )
