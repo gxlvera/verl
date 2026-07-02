@@ -30,6 +30,7 @@ from .continuous_token import (
     GLMContinuousTokenBuilder,
     GptOssContinuousTokenBuilder,
     KimiVLContinuousTokenBuilder,
+    MiMoContinuousTokenBuilder,
     MiMoVLContinuousTokenBuilder,
     MiniMaxContinuousTokenBuilder,
     MiniMaxVLContinuousTokenBuilder,
@@ -48,6 +49,7 @@ class ContinuousTokenModelFamily(StrEnum):
     QWEN25 = "qwen25"
     QWEN3 = "qwen3"
     QWEN35 = "qwen35"
+    MIMO = "mimo"
     MINIMAX = "minimax"
     MINIMAX_M2 = "minimaxm2"
     MINIMAX_M25 = "minimaxm25"
@@ -76,6 +78,7 @@ _CONTINUOUS_TOKEN_BUILDER_REGISTRY: dict[ContinuousTokenModelFamily, type[Any]] 
     ContinuousTokenModelFamily.QWEN25: QwenContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN3: QwenContinuousTokenBuilder,
     ContinuousTokenModelFamily.QWEN35: QwenContinuousTokenBuilder,
+    ContinuousTokenModelFamily.MIMO: MiMoContinuousTokenBuilder,
     ContinuousTokenModelFamily.MINIMAX: MiniMaxContinuousTokenBuilder,
     ContinuousTokenModelFamily.MINIMAX_M2: MiniMaxContinuousTokenBuilder,
     ContinuousTokenModelFamily.MINIMAX_M25: MiniMaxContinuousTokenBuilder,
@@ -207,6 +210,10 @@ def infer_continuous_token_model_family(
     # DeepSeek text models (V2/V3/R1) — match if not VL2
     if "deepseek" in compact and "vl" not in compact:
         return ContinuousTokenModelFamily.DEEPSEEK
+    # MiMo text (e.g. MiMo-7B-RL/SFT); MiMo-VL is already handled above. MiMo uses
+    # a Qwen-style ChatML template, so it needs the same <|im_end|> newline patch.
+    if "mimo" in compact:
+        return ContinuousTokenModelFamily.MIMO
     if "minimaxm27" in compact:
         return ContinuousTokenModelFamily.MINIMAX_M27
     if "minimaxm25" in compact:

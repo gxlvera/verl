@@ -466,6 +466,40 @@ class QwenContinuousTokenBuilder(ContinuousTokenBuilder):
         )
 
 
+class MiMoContinuousTokenBuilder(ContinuousTokenBuilder):
+    """MiMo ChatML boundary handling.
+
+    MiMo shares Qwen's ChatML surface: turns render ``<|im_end|>\\n`` while
+    generation may stop at ``<|im_end|>``. When the runtime prefix ends there,
+    insert the missing newline before appending non-assistant tokens. Kept as its
+    own class (rather than subclassing Qwen) so MiMo text and MiMo-VL share a
+    dedicated lineage.
+    """
+
+    def __init__(self, tokenizer: Any, **kwargs: Any):
+        super().__init__(tokenizer, **kwargs)
+        newline_ids = tokenizer.encode("\n", add_special_tokens=False)
+        if len(newline_ids) != 1:
+            raise ValueError(f"Expected MiMo newline to tokenize to one token, got {newline_ids!r}")
+        self._newline_id = int(newline_ids[0])
+        self._im_end_id = _require_token_id(tokenizer, "<|im_end|>")
+
+    def _merge_non_assistant_token_ids(
+        self, runtime_token_ids: list[int], appended_token_ids: list[int]
+    ) -> MergeResult:
+        prefix = list(runtime_token_ids)
+        inserted_token_ids: list[int] = []
+        if prefix and prefix[-1] == self._im_end_id:
+            prefix.append(self._newline_id)
+            inserted_token_ids.append(self._newline_id)
+        return MergeResult(
+            token_ids=prefix + list(appended_token_ids),
+            appended_token_count=len(appended_token_ids),
+            kind="non_assistant",
+            inserted_token_ids=inserted_token_ids,
+        )
+
+
 class MiniMaxContinuousTokenBuilder(ContinuousTokenBuilder):
     """MiniMax boundary handling.
 
@@ -949,8 +983,8 @@ class QwenVLContinuousTokenBuilder(VLContinuousTokenMixin, QwenContinuousTokenBu
     """
 
 
-class MiMoVLContinuousTokenBuilder(VLContinuousTokenMixin, QwenContinuousTokenBuilder):
-    """MiMo-VL: shares Qwen2.5-VL architecture.
+class MiMoVLContinuousTokenBuilder(VLContinuousTokenMixin, MiMoContinuousTokenBuilder):
+    """MiMo-VL: shares Qwen2.5-VL architecture, MiMo ChatML boundary handling.
 
     Rendering goes through the processor chat template (like every VL builder),
     which handles OpenAI-style list-of-blocks content natively, so no content
