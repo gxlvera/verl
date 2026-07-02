@@ -72,7 +72,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: "verl-ci-cn-beijing.cr.volces.com/verlai/verl:vllm020.dev1"
+  IMAGE: "verl-ci-cn-beijing.cr.volces.com/verlai/verl:vllm023.dev1"
   DYNAMIC_RUNNER_ENDPOINT: "https://sd10g3clalm04ug7alq90.apigateway-cn-beijing.volceapi.com/runner"
 
 jobs:
@@ -135,6 +135,11 @@ jobs:
       - name: Test vllm server abort functionality
         run: |
           pytest tests/workers/rollout/rollout_vllm/test_vllm_abort.py -v -s
+      - name: Test vllm rollout generation determinism (same-instance + cross-instance + cross-instance AgentLoop)
+        run: |
+          VLLM_DETERMINISM_DENSE_MODEL_PATH=${HOME}/models/Qwen/Qwen2.5-0.5B-Instruct \
+          VLLM_DETERMINISM_N_GPUS=2 \
+          pytest tests/workers/rollout/rollout_vllm/test_vllm_generation_determinism.py -v -s
 
   vllm_checkpoint_engine:
     needs: setup

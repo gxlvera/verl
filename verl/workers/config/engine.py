@@ -189,6 +189,8 @@ class McoreEngineConfig(EngineConfig):
     virtual_pipeline_model_parallel_size: Optional[int] = None
     context_parallel_size: int = 1
     dynamic_context_parallel: bool = False
+    entropy_from_logits_with_chunking: bool = False
+    entropy_from_logits_chunk_size: int = 2048
     max_seqlen_per_dp_cp_rank: Optional[int] = None
     sequence_parallel: bool = True
     use_distributed_optimizer: bool = True
@@ -255,6 +257,7 @@ class FSDPEngineConfig(EngineConfig):
     mixed_precision: Optional[dict[str, Any]] = None
     ulysses_sequence_parallel_size: int = 1
     entropy_from_logits_with_chunking: bool = False
+    entropy_from_logits_chunk_size: int = 2048
     use_torch_compile: bool = True
     entropy_checkpointing: bool = False
     strategy: str = "fsdp"
@@ -349,6 +352,7 @@ class VeOmniEngineConfig(EngineConfig):
 
     forward_prefetch: bool = False
     entropy_from_logits_with_chunking: bool = False
+    entropy_from_logits_chunk_size: int = 2048
     use_torch_compile: bool = True
     entropy_checkpointing: bool = False
     strategy: str = "veomni"
@@ -381,12 +385,6 @@ class VeOmniEngineConfig(EngineConfig):
     force_use_huggingface: bool = False
     activation_gpu_limit: float = 0.0
     basic_modules: Optional[list[str]] = field(default_factory=list)
-    # MoE expert-load monitor: when > 0, attach VeOmni's MoERouterMonitor.
-    # Scalar violation metrics flow through the engine's metrics dict (all
-    # Tracking backends); heatmap images are logged directly to wandb on
-    # rank 0. Rollout/log-prob forwards are excluded. Counts are all-reduced
-    # across DP/SP groups. Disabled (0) by default; no-op on non-MoE models.
-    moe_load_balance_monitor_interval: int = 0
 
     def __post_init__(self):
         super().__post_init__()
@@ -443,6 +441,7 @@ class TorchtitanEngineConfig(EngineConfig):
     offload_policy: bool = False
     use_torch_compile: bool = True
     entropy_from_logits_with_chunking: bool = False
+    entropy_from_logits_chunk_size: int = 2048
     entropy_checkpointing: bool = False
     data_parallel_size: int = 1
     data_parallel_replicate_size: int = 1
@@ -572,6 +571,7 @@ class AutomodelEngineConfig(EngineConfig):
     mp_output_dtype: str = "bf16"
     # Entropy computation
     entropy_from_logits_with_chunking: bool = False
+    entropy_from_logits_chunk_size: int = 2048
     use_torch_compile: bool = True
     entropy_checkpointing: bool = False
 

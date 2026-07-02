@@ -49,9 +49,7 @@ from verl.experimental.agent_loop.utils import resolve_config_path
 from verl.protocol import DataProto
 from verl.tools.tool_registry import load_all_tools
 from verl.trainer.distillation import is_distillation_enabled
-from verl.utils.tokenizer.chat_template import apply_chat_template, initialize_system_prompt
 from verl.utils.config import omega_conf_to_dataclass
-from verl.utils.tokenizer.continuous_token_wiring import create_continuous_token_builder
 from verl.utils.dataset.rl_dataset import RLHFDataset, get_dataset_class
 from verl.utils.model import compute_position_id_with_mask
 from verl.utils.profiler import simple_timer
@@ -66,6 +64,8 @@ from verl.utils.tokenizer import (
     get_processor_token_id,
     normalize_token_ids,
 )
+from verl.utils.tokenizer.chat_template import apply_chat_template, initialize_system_prompt
+from verl.utils.tokenizer.continuous_token_wiring import create_continuous_token_builder
 from verl.workers.config import (
     HFModelConfig,
     RolloutConfig,
@@ -227,30 +227,9 @@ class AgentLoopBase(ABC):
         self.mm_processor_kwargs = self.data_config.get("mm_processor_kwargs", {})
         self.continuous_token_builder = None
         self.enable_continuous_token = False
-        continuous_token_config = self.rollout_config.multi_turn.continuous_token
+        continuous_token_config = self.data_config.continuous_token
         if continuous_token_config.enable:
             model_config = self.config.actor_rollout_ref.model
-            # Resolve family first to check if VL builder is needed
-            from verl.utils.tokenizer.continuous_token_wiring import (
-                get_continuous_token_builder_class,
-                resolve_continuous_token_model_family,
-            )
-
-            resolved_family = resolve_continuous_token_model_family(
-                continuous_token_config.model_family,
-                model_path=model_config.path,
-                tokenizer=self.tokenizer,
-                tokenizer_name_or_path=model_config.tokenizer_path,
-            )
-            builder_cls = get_continuous_token_builder_class(resolved_family)
-            needs_processor = builder_cls.supports_multimodal()
-
-            if needs_processor and self.processor is None:
-                raise ValueError(
-                    f"Continuous Token model family {resolved_family!r} requires a processor for multimodal "
-                    f"support, but no processor is available. Ensure the processor is loaded."
-                )
-
             self.continuous_token_builder = create_continuous_token_builder(
                 self.tokenizer,
                 model_family=continuous_token_config.model_family,
@@ -746,6 +725,14 @@ class AgentLoopWorker:
         return_attention_mask: bool,
     ) -> dict[str, torch.Tensor]:
         """Right/left pad a flat list of token ids to a ``(1, max_length)`` tensor."""
+        # tokenizer.pad() with empty input returns dict with list values
+        # instead of tensors, which breaks downstream .dim() calls.
+        if not tokens:
+            pad_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+            result = {"input_ids": torch.full((1, max_length), pad_id, dtype=torch.long)}
+            if return_attention_mask:
+                result["attention_mask"] = torch.zeros((1, max_length), dtype=torch.long)
+            return result
         self.tokenizer.padding_side = padding_side
         padded = self.tokenizer.pad(
             {"input_ids": tokens},
@@ -941,7 +928,8 @@ class AgentLoopWorker:
         mm_processor_kwargs: Optional[dict[str, Any]] = None,
     ) -> torch.Tensor:
         """Compute position ids for multi-modal inputs."""
-        if self.processor is None:
+        # text-only OR non-M-RoPE multimodal (e.g. Gemma4) -> standard 1D positions
+        if self.processor is None or not hasattr(self.processor, "get_rope_index"):
             return compute_position_id_with_mask(attention_mask)  # (1, seq_len)
 
         multi_modal_kwargs = {
@@ -1247,6 +1235,12 @@ class AgentLoopManager:
         Returns:
             DataProto: Output batch.
         """
+        # Attach per-sample priority to the batch (like ``uid``) so each sample gets
+        # a globally-unique priority that flows to vLLM request scheduling. Assigned
+        # before chunking so chunks own disjoint ranges without per-worker offsets.
+        if "priority" not in prompts.non_tensor_batch:
+            prompts.non_tensor_batch["priority"] = np.arange(len(prompts), dtype=np.int64)
+
         chunkes = prompts.chunk(len(self.agent_loop_workers))
         outputs = await asyncio.gather(
             *[

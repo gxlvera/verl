@@ -19,7 +19,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-logger = logging.getLogger(__name__)
+from .chat_template import apply_chat_template
+from .tokenizer import build_multimodal_processor_inputs, normalize_token_ids
 
 _SUPPORTED_APPEND_ROLES = frozenset({"tool", "user", "system"})
 _SYNTHETIC_SYSTEM_MESSAGE: dict[str, Any] = {"role": "system", "content": "continuous token synthetic system"}
@@ -27,6 +28,9 @@ _SYNTHETIC_USER_MESSAGE: dict[str, Any] = {"role": "user", "content": "continuou
 _ASSISTANT_REASONING_CONTENT: str = "reasoning"
 _DUMMY_TOOL_NAME = "continuous_token_tool"
 MergeKind = Literal["assistant", "non_assistant"]
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,24 @@ class MergeResult:
 
 
 class ContinuousTokenBuilder:
-    """Continuous Token builder for runtime prefix reuse."""
+    """Build and update continuous-token runtime prompts for multi-turn rollouts.
+
+    This class exposes two API layers:
+
+    AgentLoop-facing runtime APIs:
+        ``build_initial_tokens`` renders the first prompt, ``merge_non_assistant_tokens``
+        merges append-only tool/user/system messages, ``merge_assistant_tokens``
+        appends model-generated assistant tokens, and ``align_response_metadata``
+        applies the recorded token edits to masks/logprobs.
+
+    Developer extension APIs:
+        Model-specific builders should subclass this class and keep the runtime
+        API contracts above stable. Chat template specific behavior belongs in hooks
+        such as ``_tokenize_tool_group``, ``_tokenize_single_non_tool``,
+        ``_tokenize_generation_prompt_delta``, and ``_merge_non_assistant_token_ids``.
+        ``render_delta_token_id`` is the shared suffix-diff helper those hooks can
+        reuse.
+    """
 
     allowed_append_roles: frozenset[str] = _SUPPORTED_APPEND_ROLES
 
@@ -163,9 +184,6 @@ class ContinuousTokenBuilder:
         add_generation_prompt: bool,
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
-        from .chat_template import apply_chat_template
-        from .tokenizer import normalize_token_ids
-
         tokenized = apply_chat_template(
             self.tokenizer,
             messages,
@@ -843,9 +861,6 @@ class VLContinuousTokenMixin:
         tools: list[dict[str, Any]] | None = None,
     ) -> list[int]:
         """Render messages through the processor (full render with all media)."""
-        from .chat_template import apply_chat_template
-        from .tokenizer import build_multimodal_processor_inputs, normalize_token_ids
-
         template_kwargs = dict(self.chat_template_kwargs)
         if tools:
             template_kwargs["tools"] = tools
@@ -853,7 +868,7 @@ class VLContinuousTokenMixin:
         # Render the chat template through the processor (not the tokenizer) so the
         # placeholder text matches the legacy rollout path. Some VL models ship a
         # processor chat template that differs from the tokenizer one (e.g. MiMo-VL,
-        # whose tokenizer template cannot render list-of-blocks content at all), so it's 
+        # whose tokenizer template cannot render list-of-blocks content at all), so it's
         # neccesary to use the processor chat template for VL models.
         text = apply_chat_template(
             self.processor,
@@ -917,12 +932,13 @@ class VLContinuousTokenMixin:
             tools=tools,
         )
 
+
 class VLContinuousTokenBuilder(VLContinuousTokenMixin, ContinuousTokenBuilder):
     """Generic vision-language builder used as the default for VL models that
     have no model-specific builder.
 
     Combines the shared processor-backed VL rendering (from the mixin) with the
-    base, family-agnostic boundary handling (from ContinuousTokenBuilder). 
+    base, family-agnostic boundary handling (from ContinuousTokenBuilder).
     """
 
 
@@ -972,9 +988,6 @@ class MiniMaxVLContinuousTokenBuilder(VLContinuousTokenMixin, MiniMaxContinuousT
         the scaffold is the final ``<beginning_of_sentence>...`` block, i.e. every
         token from the last ``<beginning_of_sentence>`` to the end.
         """
-        from .chat_template import apply_chat_template
-        from .tokenizer import build_multimodal_processor_inputs, normalize_token_ids
-
         text = apply_chat_template(
             self.processor,
             [_SYNTHETIC_SYSTEM_MESSAGE, _SYNTHETIC_USER_MESSAGE],
@@ -1127,8 +1140,6 @@ class DeepSeekVL2ContinuousTokenBuilder(DeepSeekContinuousTokenBuilder):
         add_generation_prompt: bool = True,
     ) -> list[int]:
         """Render messages through DeepseekVLV2Processor."""
-        from .tokenizer import normalize_token_ids
-
         conv, all_images = self._to_vl2_conversation(messages, images, add_generation_prompt)
         out = self.processor.__call__(conversations=conv, images=all_images, force_batchify=True)
         return normalize_token_ids(out.input_ids[0].tolist())
