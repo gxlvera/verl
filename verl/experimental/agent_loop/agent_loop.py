@@ -230,9 +230,11 @@ class AgentLoopBase(ABC):
         continuous_token_config = self.data_config.continuous_token
         if continuous_token_config.enable:
             model_config = self.config.actor_rollout_ref.model
+            # The Continuous Token model family is always inferred from the model /
+            # tokenizer path; unrecognized models fall back to the default builder
+            # (or the default VL builder when a multimodal processor is present).
             self.continuous_token_builder = create_continuous_token_builder(
                 self.tokenizer,
-                model_family=continuous_token_config.model_family,
                 model_path=model_config.path,
                 tokenizer_name_or_path=model_config.tokenizer_path,
                 chat_template_kwargs=self.apply_chat_template_kwargs,

@@ -61,7 +61,6 @@ def init_config() -> DictConfig:
     config.actor_rollout_ref.rollout.skip_tokenizer_init = True
     if os.getenv("ENABLE_CONTINUOUS_TOKEN") in {"1", "true", "True"}:
         config.data.continuous_token.enable = True
-        config.data.continuous_token.model_family = "auto"
 
     return config
 

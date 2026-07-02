@@ -119,12 +119,11 @@ apply_chat_template_kwargs: {}
 # Disabled by default for compatibility.
 continuous_token:
 
-  # Enable Continuous Token for text-only multi-turn PPO rollout.
+  # Enable Continuous Token for multi-turn PPO rollout. The model family (boundary
+  # handling) is inferred automatically from the model / tokenizer path; unknown
+  # models fall back to the default builder (or the default VL builder when a
+  # multimodal processor is present).
   enable: False
-
-  # Model-family specific boundary handling. auto infers from model path/tokenizer name.
-  # Options: auto, default, qwen, qwen25, qwen3, qwen35, minimax, minimaxm2, minimaxm25, minimaxm27, glm47, glm5, gemma4, gptoss
-  model_family: auto
 
 # Additional kwargs passed to multimodal processors/backends.
 mm_processor_kwargs: {}

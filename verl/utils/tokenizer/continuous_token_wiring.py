@@ -233,16 +233,33 @@ def infer_continuous_token_model_family(
 def create_continuous_token_builder(
     tokenizer: Any,
     *,
-    model_family: str | ContinuousTokenModelFamily,
+    model_family: str | ContinuousTokenModelFamily = "auto",
     model_path: str | None = None,
     tokenizer_name_or_path: str | None = None,
     chat_template_kwargs: dict[str, Any] | None = None,
     processor: Any | None = None,
     **builder_kwargs: Any,
 ) -> Any:
-    """Instantiate the registered builder selected by config/model metadata.
+    """Instantiate the Continuous Token builder inferred from the model/tokenizer.
 
-    For multimodal (VL) families, ``processor`` must be provided.
+    The model family is inferred from ``model_path`` / tokenizer name (an explicit
+    ``model_family`` is honored mainly for testing). Whether the run is text-only
+    or vision-language is decided by the presence of a multimodal ``processor``.
+
+    Resolution rules:
+      * Text (no multimodal processor): use the inferred model-specific text
+        builder, or the default builder when nothing matched (a warning is emitted
+        by the inference step in that case).
+      * VL (multimodal processor present):
+          - If the name resolved to a VL family, use that VL builder.
+          - If the name resolved to a *unified* text family that carries no ``vl``
+            marker, upgrade it: an unrecognized model (``default``) becomes the
+            default VL builder (with a warning), and ``gemma4`` becomes its VL
+            builder.
+          - Any other recognized text-specific family paired with a processor is
+            treated as a misconfiguration and raises: a VL model's path should
+            identify it as VL (resolving to a ``*_vl`` family), and a text-only
+            model should not be loaded with a multimodal processor.
     """
     resolved_family = resolve_continuous_token_model_family(
         model_family,
@@ -250,31 +267,52 @@ def create_continuous_token_builder(
         tokenizer=tokenizer,
         tokenizer_name_or_path=tokenizer_name_or_path,
     )
-    # VL upgrade: when the family resolves to a text family that has a VL
-    # counterpart (the generic ``default`` with no model-specific match, or a
-    # unified text+vision checkpoint such as Gemma4 whose name carries no ``vl``
-    # marker) but a multimodal processor is supplied, use the VL builder so
-    # rendering goes through the processor chat template.
-    if _is_multimodal_processor(processor) and resolved_family in _TEXT_TO_VL_FAMILY:
-        upgraded_family = _TEXT_TO_VL_FAMILY[resolved_family]
-        logger.info(
-            "Multimodal processor detected with family %s; upgrading to VL family %s.",
-            resolved_family,
-            upgraded_family,
-        )
-        resolved_family = upgraded_family
     builder_cls = get_continuous_token_builder_class(resolved_family)
-    logger.info("Creating Continuous Token builder: family=%s class=%s", resolved_family, builder_cls)
+    has_mm_processor = _is_multimodal_processor(processor)
 
-    # VL builders require processor as positional arg
+    if has_mm_processor:
+        # --- Vision-language run ---
+        if builder_cls.supports_multimodal():
+            # The name already identified a model-specific VL family.
+            logger.info("Creating Continuous Token builder: family=%s class=%s", resolved_family, builder_cls)
+            return builder_cls(tokenizer, processor, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
+
+        # Inferred a text family, but a multimodal processor is present. Only the
+        # unified checkpoints with no ``vl`` marker are safe to auto-upgrade.
+        if resolved_family in _TEXT_TO_VL_FAMILY:
+            upgraded_family = _TEXT_TO_VL_FAMILY[resolved_family]
+            if upgraded_family == ContinuousTokenModelFamily.VL_DEFAULT:
+                logger.warning(
+                    "No model-specific VL Continuous Token builder matched (inferred %s); "
+                    "falling back to the default VL builder (VLContinuousTokenBuilder).",
+                    resolved_family,
+                )
+            else:
+                logger.info(
+                    "Multimodal processor detected with unified family %s; upgrading to VL family %s.",
+                    resolved_family,
+                    upgraded_family,
+                )
+            resolved_family = upgraded_family
+            builder_cls = get_continuous_token_builder_class(resolved_family)
+            logger.info("Creating Continuous Token builder: family=%s class=%s", resolved_family, builder_cls)
+            return builder_cls(tokenizer, processor, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
+
+        raise ValueError(
+            f"Model resolved to the text Continuous Token family {resolved_family!r}, but a multimodal "
+            f"processor was provided. If this is a vision-language model, its model path/name should "
+            f"identify it as VL so it resolves to a '*_vl' family (e.g. 'Qwen2.5-VL-7B-Instruct'). "
+            f"If it is a text-only model, it should not be loaded with a multimodal processor."
+        )
+
+    # --- Text-only run (no multimodal processor) ---
     if builder_cls.supports_multimodal():
-        if processor is None:
-            raise ValueError(
-                f"Multimodal builder {builder_cls.__name__} requires a processor, but none was provided. "
-                f"Pass processor= when using model_family={resolved_family!r}."
-            )
-        return builder_cls(tokenizer, processor, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
-
+        raise ValueError(
+            f"Model resolved to the VL Continuous Token family {resolved_family!r} "
+            f"({builder_cls.__name__}), which requires a processor, but none was provided. "
+            f"Ensure the processor is loaded for vision-language models."
+        )
+    logger.info("Creating Continuous Token builder: family=%s class=%s", resolved_family, builder_cls)
     return builder_cls(tokenizer, chat_template_kwargs=chat_template_kwargs, **builder_kwargs)
 
 
