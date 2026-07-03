@@ -338,6 +338,24 @@ tensors locally and applies them through the ordinary weight-update path (no SGL
 A runnable example is ``verl/experimental/one_step_off_policy/shell/grpo_0.6b_gsm8k_fsdp2_sglang_delta_2_6.sh`` — the
 SGLang 2+6 disaggregated GRPO recipe with ``backend=delta``.
 
+#### Sharded snapshot (``delta_sharded``)
+
+The ``delta`` backend above still ``full_tensor()``-gathers every parameter to rank 0 before diffing, and rank 0
+holds a full-model pinned-CPU snapshot. The ``delta_sharded`` backend pushes the diff *below* the all-gather: each
+actor rank pins a snapshot of only **its** FSDP shard, byte-diffs the shard locally, and gathers just the changed
+``(position, value)`` pairs to rank 0. So the gather volume drops from the full parameter to the sparsity ratio
+(~1–3%), and no rank needs a full-model snapshot — the memory and the gather traffic both shard with the world size.
+
+```shell
+    actor_rollout_ref.rollout.checkpoint_engine.backend=delta_sharded \
+    +actor_rollout_ref.rollout.checkpoint_engine.engine_kwargs.delta_sharded.encoding=indices
+```
+
+The assembled delta is **bit-identical** to what ``delta`` produces, so the wire format, the per-flush checksum, and
+the rollout-side receiver are all unchanged. Each rank computes its shard's absolute position in the full flattened
+parameter purely locally (from the DTensor spec, no extra collective). Scope: FSDP2 ``Shard(0)`` parameters (the
+common case) plus replicated / non-DTensor params; other shard dimensions are not supported and raise.
+
 ## Functional Support
 
 | Category           | Support Situation                                                                                               |
