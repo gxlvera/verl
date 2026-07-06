@@ -570,6 +570,19 @@ def _format_tool_call_text(tool_parser: str, name: str, arguments: dict[str, Any
         return f"<tool_call>{name}{arg_pairs}</tool_call>"
     if tool_parser == "kimi":
         return f"<|tool_call_begin|>{name}<|tool_call_argument_begin|>{args_json}<|tool_call_end|>"
+    if tool_parser == "gemma4":
+        # Gemma-4 format: string args wrapped in <|"|>...<|"|>, other scalars bare.
+        arg_parts = []
+        for key, value in arguments.items():
+            if isinstance(value, str):
+                arg_parts.append(f'{key}:<|"|>{value}<|"|>')
+            elif isinstance(value, bool):
+                arg_parts.append(f"{key}:{str(value).lower()}")
+            elif value is None:
+                arg_parts.append(f"{key}:null")
+            else:
+                arg_parts.append(f"{key}:{value}")
+        return f"<|tool_call>call:{name}{{{','.join(arg_parts)}}}<tool_call|>"
     raise ValueError(f"Unsupported tool parser for mock tool-call rendering: {tool_parser!r}")
 
 
