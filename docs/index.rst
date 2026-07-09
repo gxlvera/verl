@@ -122,6 +122,7 @@ verl is fast with:
    :caption: Async Training
 
    advance/one_step_off
+   advance/delta_weight_sync
    advance/fully_async
    advance/async-on-policy-distill
 

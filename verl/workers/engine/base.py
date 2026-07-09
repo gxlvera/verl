@@ -158,6 +158,25 @@ class BaseEngine:
         """
         raise NotImplementedError
 
+    def get_per_tensor_param_shard(self, **kwargs) -> tuple[Generator, Optional[dict]]:
+        """
+        Like :meth:`get_per_tensor_param`, but yields each rank's *local* parameter shard
+        instead of all-gathering full tensors.
+
+        Used by checkpoint engines that operate on shards (e.g. the ``delta_sharded``
+        backends, which byte-diff each rank's shard locally and only gather the changed
+        elements), so the export never materializes full tensors on any rank.
+
+        The per-item schema is engine-specific: implementations yield the local shard
+        plus enough placement metadata for the consumer to map shard-local positions
+        back to the full parameter (see the FSDP and Megatron engine implementations).
+
+        Returns:
+            Generator: A generator that yields per-parameter local shards with placement metadata.
+            Optional[dict]: Optional peft config.
+        """
+        raise NotImplementedError
+
     def get_data_parallel_size(self):
         raise NotImplementedError
 
