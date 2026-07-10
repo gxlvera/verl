@@ -1,6 +1,6 @@
 # Delta Weight Sync
 
-Last updated: 07/09/2026.
+Last updated: 07/10/2026.
 
 ## Motivation
 
@@ -37,8 +37,10 @@ checkpoint engine (including the V1 ``separate_async`` trainer).
   delta into a NaN-masked tensor, and overwrites only the changed positions *in place* on the live
   weights. No full-model mirror is staged anywhere on the rollout side: receiver peak memory is one
   bucket plus one decode chunk, independent of model size.
-- **Seeding**: the first sync broadcasts a full delta (every position), so a dummy-initialized rollout
-  gets a correct base; subsequent syncs are sparse.
+- **Seeding**: the first sync is an explicit **dense** pass — the raw weights stream through the same
+  bucketed wire with no positions attached (values only), populating the trainer-side snapshot as they
+  go — so a dummy-initialized rollout gets a correct base without any sparse-encoding overhead.
+  Subsequent syncs are sparse.
 
 ## Backends
 
@@ -68,15 +70,29 @@ memory and the gather traffic both shard with the world size.
 The assembled delta is **bit-identical** to what ``delta`` produces, so the wire format, the per-flush
 checksum, and the rollout-side receiver are all unchanged. Each rank computes its shard's absolute
 position in the full flattened parameter purely locally (from the DTensor spec, no extra collective).
-Scope: FSDP2 ``Shard(0)`` parameters (the common case) plus replicated / non-DTensor params; other shard
-dimensions are not supported and raise.
+
+**Supported training engines**: the shard export requires ``Shard(0)`` DTensor parameters, which both
+FSDP versions provide:
+
+- **FSDP2** (``fully_shard``, ``actor.strategy=fsdp2``): native DTensor params; the export never stages
+  the whole shard on the GPU (``state_dict()`` is reference-only, shards move lazily per parameter).
+- **FSDP1** (``actor.strategy=fsdp``, the default): verl configures ``SHARDED_STATE_DICT``, whose export
+  also emits per-rank ``Shard(0)`` DTensors. FSDP1's state-dict export runs through the unshard
+  machinery, so the whole-shard GPU staging round trip is kept for it (it is skipped for FSDP2).
+  Single-GPU FSDP1 uses ``FULL_STATE_DICT`` (plain tensors) and degrades to the replicated/rank-0 path —
+  still correct, just not shard-parallel.
+
+Other shard dimensions than ``Shard(0)`` are not supported and raise.
+
+> **Config note**: the training engine reads the **top-level** ``actor_rollout_ref.actor.strategy``;
+> setting only ``actor.fsdp_config.strategy`` does *not* select FSDP2.
 
 ## Usage
 
 A runnable example is ``verl/experimental/one_step_off_policy/shell/grpo_0.6b_gsm8k_fsdp2_sglang_delta_2_6.sh`` —
 the SGLang 2+6 disaggregated GRPO recipe with ``backend=delta``.
 
-Current scope: disaggregated (``hybrid_engine=False``) + SGLang rollout in BF16, FSDP2 training engine.
+Current scope: disaggregated (``hybrid_engine=False``) + SGLang rollout in BF16, FSDP1/FSDP2 training engines.
 
 ## Roadmap
 
