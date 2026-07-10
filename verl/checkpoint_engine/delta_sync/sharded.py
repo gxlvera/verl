@@ -124,7 +124,7 @@ def gather_v_to_rank0(
     cnt = torch.tensor([n], dtype=torch.long, device=dev)
     counts = [torch.zeros(1, dtype=torch.long, device=dev) for _ in range(world)]
     dist.all_gather(counts, cnt, group=group)
-    counts = [int(c.item()) for c in counts]
+    counts = torch.cat(counts).cpu().tolist()  # one D2H sync instead of `world`
     max_n = max(counts) if counts else 0
     if max_n == 0:
         return (torch.empty(0, dtype=torch.int64, device=dev),
@@ -169,7 +169,8 @@ def gather_v_batched_to_rank0(
 
     counts_all = [torch.zeros_like(counts) for _ in range(world)]
     dist.all_gather(counts_all, counts.to(dev), group=group)
-    totals = [int(c.sum().item()) for c in counts_all]
+    counts_cpu = torch.stack(counts_all).cpu().tolist()  # one D2H sync instead of `world`
+    totals = [sum(c) for c in counts_cpu]
     max_n = max(totals) if totals else 0
     if max_n == 0:
         if rank != 0:
@@ -192,7 +193,6 @@ def gather_v_batched_to_rank0(
         return None
 
     # per-rank cumulative offsets into each blob, sliced per param then stitched across ranks
-    counts_cpu = [c.cpu().tolist() for c in counts_all]
     offs = [[0] * (k + 1) for _ in range(world)]
     for r in range(world):
         for i in range(k):
@@ -230,8 +230,9 @@ def gather_dense_to_rank0(
     meta = torch.tensor([n, offset], dtype=torch.long, device=dev)
     metas = [torch.zeros(2, dtype=torch.long, device=dev) for _ in range(world)]
     dist.all_gather(metas, meta, group=group)
-    counts = [int(m[0].item()) for m in metas]
-    offsets = [int(m[1].item()) for m in metas]
+    metas_cpu = torch.stack(metas).cpu().tolist()  # one D2H sync instead of 2 * `world`
+    counts = [int(m[0]) for m in metas_cpu]
+    offsets = [int(m[1]) for m in metas_cpu]
     max_n = max(counts) if counts else 0
     if max_n == 0:
         return torch.empty(0, dtype=local_val.dtype, device=dev) if rank == 0 else None
@@ -269,7 +270,7 @@ def gather_v_grouped_to_rank0(
     cnt = torch.tensor([n], dtype=torch.long, device=dev)
     counts = [torch.zeros(1, dtype=torch.long, device=dev) for _ in range(world)]
     dist.all_gather(counts, cnt, group=group)
-    counts = [int(c.item()) for c in counts]
+    counts = torch.cat(counts).cpu().tolist()  # one D2H sync instead of `world`
     max_n = max(counts) if counts else 0
 
     if max_n == 0:

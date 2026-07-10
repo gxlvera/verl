@@ -115,6 +115,9 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
         self.socket.send_pyobj(meta)
         pos_u8 = flush.positions_cpu.to("cuda", non_blocking=True).contiguous().view(torch.uint8)
         val_u8 = flush.values_gpu.contiguous().view(torch.uint8)
+        # Stage into cupy-owned buffers: ray's NCCL broadcast is enqueued on a separate
+        # stream with no recordStream on its inputs, so broadcasting a zero-copy view of
+        # these torch tensors (freed right after this call) would race with allocator reuse.
         pos_cp = cp.empty(pos_u8.numel(), dtype=cp.uint8)
         val_cp = cp.empty(val_u8.numel(), dtype=cp.uint8)
         pos_cp[:] = cp.asarray(pos_u8)
@@ -143,6 +146,7 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
         self.socket.send_string(self.topic, flags=zmq.SNDMORE)
         self.socket.send_pyobj(meta)
         val_u8 = values.view(torch.uint8)
+        # cupy-owned staging: same lifetime rationale as _publish_flush.
         val_cp = cp.empty(val_u8.numel(), dtype=cp.uint8)
         val_cp[:] = cp.asarray(val_u8)
         collective.broadcast(val_cp, src_rank=0, group_name=self.group_name)
