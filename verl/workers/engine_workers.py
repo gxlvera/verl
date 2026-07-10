@@ -705,7 +705,8 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
             else:
                 per_tensor_param, _ = self.actor.engine.get_per_tensor_param()
             await self.checkpoint_engine.send_weights(per_tensor_param, global_steps=global_steps)
-            return self.checkpoint_engine.pop_sync_metrics()
+            # Engines are registry-pluggable and not required to subclass CheckpointEngine.
+            return getattr(self.checkpoint_engine, "pop_sync_metrics", dict)()
 
         set_expandable_segments(False)
         log_gpu_memory_usage("Before resume weights", logger=logger)
