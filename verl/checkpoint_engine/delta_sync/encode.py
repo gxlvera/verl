@@ -75,9 +75,13 @@ class DeltaParam:
 
 @dataclass
 class EncodedChunk:
-    """One HF chunk after position+value encoding, before bucket merging."""
+    """One HF chunk after position+value encoding, before bucket merging.
 
-    pos_bytes: bytes
+    ``pos_u8`` stays on the values' device (a host round trip here dominated
+    the whole send at scale); the wire broadcasts from the GPU anyway.
+    """
+
+    pos_u8: torch.Tensor
     val_tensor: torch.Tensor
     params: list[DeltaParam]
     nnz: int
@@ -85,7 +89,7 @@ class EncodedChunk:
     @classmethod
     def empty(cls) -> "EncodedChunk":
         return cls(
-            pos_bytes=b"",
+            pos_u8=torch.empty(0, dtype=torch.uint8),
             val_tensor=torch.empty(0, dtype=torch.bfloat16),
             params=[],
             nnz=0,
@@ -167,7 +171,7 @@ def _encode_indices(diffs: list[ParamDiff]) -> EncodedChunk:
     positions = torch.cat(pos_pieces, dim=0)
     values = torch.cat(val_pieces, dim=0)
     return EncodedChunk(
-        pos_bytes=positions.cpu().numpy().tobytes(),
+        pos_u8=positions.contiguous().view(torch.uint8),
         val_tensor=values,
         params=params,
         nnz=val_off,
@@ -218,34 +222,34 @@ def _encode_deltas(diffs: list[ParamDiff]) -> EncodedChunk:
     max_per_param = (
         torch.stack([d.max() for d in per_param_deltas]).cpu().tolist()
     )
-    pos_byte_pieces: list[bytes] = []
+    pos_u8_pieces: list[torch.Tensor] = []
     pos_byte_off = val_off = 0
     params: list[DeltaParam] = []
     for (d, nnz), deltas, max_d in zip(
         kept, per_param_deltas, max_per_param, strict=True
     ):
         width = 2 if int(max_d) <= 65535 else 4
-        np_dtype = np.uint16 if width == 2 else np.uint32
-        b_chunk = deltas.cpu().numpy().astype(np_dtype, copy=False).tobytes()
-        pos_byte_pieces.append(b_chunk)
+        int_dtype = torch.int16 if width == 2 else torch.int32
+        piece = deltas.to(int_dtype).contiguous().view(torch.uint8)
+        pos_u8_pieces.append(piece)
         params.append(
             DeltaParam(
                 name=d.name,
                 dtype=str(d.values.dtype).replace("torch.", ""),
                 shape=list(d.values.shape),
                 pos_start=pos_byte_off,
-                pos_end=pos_byte_off + len(b_chunk),
+                pos_end=pos_byte_off + piece.numel(),
                 pos_width=width,
                 val_start=val_off,
                 val_end=val_off + nnz,
             )
         )
-        pos_byte_off += len(b_chunk)
+        pos_byte_off += piece.numel()
         val_off += nnz
 
     values = torch.cat(val_pieces, dim=0)
     return EncodedChunk(
-        pos_bytes=b"".join(pos_byte_pieces),
+        pos_u8=torch.cat(pos_u8_pieces, dim=0),
         val_tensor=values,
         params=params,
         nnz=val_off,
@@ -321,7 +325,7 @@ class DeltaBucket:
     growing position blob and value tensor on ``add``.
     """
 
-    pos_pieces: list[bytes] = field(default_factory=list)
+    pos_pieces: list[torch.Tensor] = field(default_factory=list)
     val_pieces: list[torch.Tensor] = field(default_factory=list)
     params: list[DeltaParam] = field(default_factory=list)
     pos_total: int = 0
@@ -334,7 +338,7 @@ class DeltaBucket:
 
     def should_flush_before_add(self, chunk: EncodedChunk, byte_limit: int) -> bool:
         chunk_bytes = (
-            len(chunk.pos_bytes)
+            chunk.pos_u8.numel()
             + chunk.val_tensor.numel() * chunk.val_tensor.element_size()
         )
         return self.has_updates and self.byte_size + chunk_bytes > byte_limit
@@ -350,20 +354,19 @@ class DeltaBucket:
                     val_end=p.val_end + self.val_total,
                 )
             )
-        self.pos_pieces.append(chunk.pos_bytes)
+        self.pos_pieces.append(chunk.pos_u8)
         self.val_pieces.append(chunk.val_tensor)
-        self.pos_total += len(chunk.pos_bytes)
+        self.pos_total += chunk.pos_u8.numel()
         self.val_total += chunk.val_tensor.numel()
         self.byte_size += (
-            len(chunk.pos_bytes)
+            chunk.pos_u8.numel()
             + chunk.val_tensor.numel() * chunk.val_tensor.element_size()
         )
 
-    def merged_positions_cpu(self) -> torch.Tensor:
-        merged = b"".join(self.pos_pieces)
-        if not merged:
+    def merged_positions(self) -> torch.Tensor:
+        if not self.pos_pieces:
             return torch.empty(0, dtype=torch.uint8)
-        return torch.from_numpy(np.frombuffer(merged, dtype=np.uint8).copy())
+        return torch.cat(self.pos_pieces, dim=0)
 
     def merged_values(self) -> torch.Tensor:
         if not self.val_pieces:

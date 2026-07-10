@@ -90,18 +90,17 @@ def _chunked(
 def _materialize_flush(
     bucket: DeltaBucket, encoding: DeltaEncodingName
 ) -> DeltaFlush:
-    positions_cpu = bucket.merged_positions_cpu()
+    positions_u8 = bucket.merged_positions()
     values_gpu = bucket.merged_values()
     params = list(bucket.params)
     bucket.clear()
-    # GPU-resident checksum so positions go to the device the values already
-    # live on -- the NCCL broadcast needs them on-device anyway.
-    positions_gpu = positions_cpu.to(values_gpu.device, non_blocking=True)
-    cks = _checksum(positions_gpu, values_gpu)
+    # Positions already live on the values' device (encode keeps them there);
+    # checksum and the NCCL broadcast both consume them in place.
+    cks = _checksum(positions_u8, values_gpu)
     return DeltaFlush(
         encoding=encoding,
         params=params,
-        positions_cpu=positions_cpu,
+        positions_cpu=positions_u8,
         values_gpu=values_gpu,
         checksum=cks,
     )
