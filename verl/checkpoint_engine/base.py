@@ -170,6 +170,16 @@ class CheckpointEngine(ABC):
         """
         raise NotImplementedError
 
+    def pop_sync_metrics(self) -> dict:
+        """Return and clear metrics describing the last completed weight sync.
+
+        Backends that track per-sync statistics (e.g. the delta engines' changed
+        ratio and wire payload size) override this. The sender worker returns it
+        from ``update_weights`` so the trainer can merge the stats into that
+        step's metrics (and thus into wandb).
+        """
+        return {}
+
     @abstractmethod
     async def send_weights(
         self,
@@ -482,7 +492,7 @@ class CheckpointEngineManager:
         # 0. update weights for sync training with colocated actor and rollout
         if self.backend == "naive":
             ray.get(self.actor_wg.update_weights(global_steps=global_steps, mode=self.backend))
-            return
+            return {}
 
         # 1. abort and save all unfinished requests for partial rollout
         await self.abort_replicas()
@@ -501,10 +511,16 @@ class CheckpointEngineManager:
         self.build_process_group(rollout)
 
         # 5. update weights of all workers
-        ray.get(
+        results = ray.get(
             actor_wg.update_weights(global_steps=global_steps, mode=self.backend)
             + rollout.update_weights(global_steps=global_steps)
         )
+        # The sender workers return the engine's per-sync metrics (empty for
+        # backends that don't track any); merge and hand them to the trainer.
+        sync_metrics: dict = {}
+        for result in results[: actor_wg.world_size]:
+            if isinstance(result, dict):
+                sync_metrics.update(result)
 
         # 6. finalize all workers
         ray.get(
@@ -517,6 +533,8 @@ class CheckpointEngineManager:
 
         # 8. resume all unfinished requests for partial rollout
         await self.resume_generation_replicas()
+
+        return sync_metrics
 
 
 async def split_weight_chunks(

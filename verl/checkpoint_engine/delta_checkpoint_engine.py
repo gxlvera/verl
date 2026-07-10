@@ -78,6 +78,7 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
         super().__init__(*args, **kwargs)
         self.encoding = encoding
         self._state = DeltaState()  # trainer-side snapshot for diffing
+        self._sync_metrics: dict = {}  # rank0 sender stats for the last sync (see pop_sync_metrics)
 
     def prepare(self) -> MasterMetadata | None:
         # Delta broadcasts small per-flush buffers directly, so skip the parent's
@@ -127,28 +128,38 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
         self.socket.send_string(self.topic, flags=zmq.SNDMORE)
         self.socket.send_pyobj(meta)
 
-    def _stream_flushes(self, flush_iter, first: bool, global_steps, tag: str) -> None:
+    def pop_sync_metrics(self) -> dict:
+        metrics, self._sync_metrics = self._sync_metrics, {}
+        return metrics
+
+    def _stream_flushes(self, flush_iter, first: bool, global_steps, tag: str) -> tuple[int, int, int]:
         """Stream flushes with a 1-flush lookahead so the final flush carries ``is_last``; each flush
-        is freed right after it is broadcast, bounding peak memory to ~2 flushes."""
+        is freed right after it is broadcast, bounding peak memory to ~2 flushes.
+
+        Returns ``(n_flushes, changed_elems, wire_bytes)`` for sync metrics."""
         pending = None
         n = 0
         total = 0
+        wire_bytes = 0
         for f in flush_iter:
             if pending is not None:
                 self._publish_flush(pending, first, is_last=False)
                 n += 1
                 total += int(pending.values_gpu.numel())
+                wire_bytes += int(pending.positions_cpu.numel()) + int(pending.values_gpu.nbytes)
             pending = f
         if pending is not None:
             self._publish_flush(pending, first, is_last=True)
             n += 1
             total += int(pending.values_gpu.numel())
+            wire_bytes += int(pending.positions_cpu.numel()) + int(pending.values_gpu.nbytes)
         else:
             self._publish_terminal(first)
         logger.info(
             "delta-nccl send v=%s %s flushes=%d nnz=%d (streamed)",
             global_steps, tag, n, total,
         )
+        return n, total, wire_bytes
 
     async def send_weights(
         self,
@@ -170,10 +181,27 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
         else:
             weights_iter = weights
 
+        total_elems = 0
+
+        def _counted(it):
+            nonlocal total_elems
+            for name, tensor in it:
+                total_elems += tensor.numel()
+                yield name, tensor
+
         flush_gen = iter_delta_flushes(
-            weights_iter, self._state, encoding=self.encoding, bucket_bytes=self.bucket_size
+            _counted(weights_iter), self._state, encoding=self.encoding, bucket_bytes=self.bucket_size
         )
-        self._stream_flushes(flush_gen, first, global_steps, "FULL" if first else "delta")
+        n_flushes, changed, wire_bytes = self._stream_flushes(
+            flush_gen, first, global_steps, "FULL" if first else "delta"
+        )
+        if total_elems:
+            self._sync_metrics = {
+                "checkpoint_engine/changed_ratio": changed / total_elems,
+                "checkpoint_engine/changed_elems": float(changed),
+                "checkpoint_engine/payload_mbytes": wire_bytes / (1 << 20),
+                "checkpoint_engine/flushes": float(n_flushes),
+            }
 
     # ---- rollout worker side ----
     def receive_weights(self, global_steps: int | None = None):
@@ -348,6 +376,9 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
         bucket_bytes = 0
         pending = None  # a DeltaFlush awaiting emission (1-flush lookahead so the last flush is is_last)
         n_flushes = 0
+        changed_elems = 0
+        total_elems = 0
+        wire_bytes = 0
 
         def _emit(is_last):
             nonlocal pending, n_flushes
@@ -381,7 +412,11 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
             self._shard_snap[name] = snap
 
             aidx, aval = gather_v_to_rank0(gidx, gval)
+            if is_r0:
+                total_elems += int(_full_numel)
             if is_r0 and aidx is not None and aidx.numel() > 0:
+                changed_elems += int(aidx.numel())
+                wire_bytes += int(aidx.numel()) * (4 + aval.element_size())
                 # Slice oversized per-param deltas so one entry never exceeds
                 # MAX_ENTRY_ELEMS (bounds the receiver-side decode transient).
                 for s in range(0, aidx.numel(), self.MAX_ENTRY_ELEMS):
@@ -401,6 +436,13 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
             _emit(is_last=True)
         else:
             self._publish_terminal(first)
+        if total_elems:
+            self._sync_metrics = {
+                "checkpoint_engine/changed_ratio": changed_elems / total_elems,
+                "checkpoint_engine/changed_elems": float(changed_elems),
+                "checkpoint_engine/payload_mbytes": wire_bytes / (1 << 20),
+                "checkpoint_engine/flushes": float(n_flushes),
+            }
         logger.info(
             "delta-sharded send v=%s %s flushes=%d (streamed)",
             global_steps, "FULL" if first else "delta", n_flushes,
