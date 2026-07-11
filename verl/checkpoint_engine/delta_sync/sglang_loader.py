@@ -76,20 +76,39 @@ def apply_delta(model, named_tensors) -> None:
         _apply_dense(model, spec["params"], values)
         return
 
+    import os as _os
+    import time as _time
+
+    _prof = bool(_os.environ.get("VERL_SYNC_PROFILE"))
+    _decode = _apply = 0.0
+
+    def _now():
+        if _prof:
+            torch.cuda.synchronize()
+        return _time.perf_counter()
+
     encoding = spec["encoding"]
     with _masked_copy():
         chunk: list[tuple[str, torch.Tensor]] = []
         chunk_bytes = 0
         for p in spec["params"]:
+            _t0 = _now()
             t = _decode_one(encoding, positions, values, p)
+            _decode += _now() - _t0
             nbytes = t.numel() * t.element_size()
             if chunk and chunk_bytes + nbytes > CHUNK_BYTES:
+                _t0 = _now()
                 model.load_weights(chunk)
+                _apply += _now() - _t0
                 chunk, chunk_bytes = [], 0
             chunk.append((p["name"], t))
             chunk_bytes += nbytes
         if chunk:
+            _t0 = _now()
             model.load_weights(chunk)
+            _apply += _now() - _t0
+    if _prof:
+        print(f"[loader-profile] decode={_decode:.3f}s apply(masked load_weights)={_apply:.3f}s", flush=True)
 
 
 def _apply_dense(model, params: list[dict], values: torch.Tensor) -> None:

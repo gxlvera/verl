@@ -346,12 +346,36 @@ class ServerAdapter(BaseRollout):
             else:
                 weights = weights
 
+            import os as _os
+            import time as _time
+
+            _prof = bool(_os.environ.get("VERL_SYNC_PROFILE"))
+            _recv = _apply = 0.0
+            _nb = 0
+
+            def _now():
+                if _prof:
+                    torch.cuda.synchronize()
+                return _time.perf_counter()
+
+            _t0 = _now()
             async for params_batch in get_named_tensor_buckets(weights, update_weights_bucket_bytes):
+                _t1 = _now()
+                _recv += _t1 - _t0
                 await sgl_update_weights(
                     engine=self._engine,
                     params_batch=params_batch,
                     device_mesh_key="infer_tp",
                     device_mesh=self.device_mesh,
+                )
+                _t0 = _now()
+                _apply += _t0 - _t1
+                _nb += 1
+            if _prof and self._engine is not None:
+                print(
+                    f"[nccl-recv-profile] buckets={_nb} recv(wire)={_recv:.3f}s "
+                    f"apply(ipc+load_weights)={_apply:.3f}s",
+                    flush=True,
                 )
 
         if self._engine is not None and self._is_server_tp_leader():

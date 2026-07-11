@@ -79,15 +79,22 @@ class BroadcastOperation:
 
     def _run(self):
         # broadcast tensor meta via zeromq PUB/SUB
+        _t0 = time.perf_counter()
         if self.rank == 0:
             self.socket.send_string(self.topic, flags=zmq.SNDMORE)
             self.socket.send_pyobj(self.metadata)
         else:
             self.socket.recv_string()
             self.metadata = self.socket.recv_pyobj()
+        _t1 = time.perf_counter()
 
         # broadcast tensor via NCCL
         collective.broadcast(self.bucket, src_rank=0, group_name=self.group_name)
+        if os.environ.get("VERL_SYNC_PROFILE"):
+            torch.cuda.synchronize()
+        # meta wait ~= upstream producer stall (recv side); wire = NCCL broadcast itself
+        self.meta_wait_s = _t1 - _t0
+        self.wire_s = time.perf_counter() - _t1
 
     async def wait_for_complete(self) -> dict[str, TensorMeta]:
         """Wait for the broadcast operation to complete.
@@ -248,17 +255,38 @@ class NCCLCheckpointEngine(CheckpointEngine):
         send_buf, recv_buf = self.send_buf, self.recv_buf
         broadcast_op = None
 
+        # VERL_PROFILE_NCCL_SEND=1 decomposes the (double-buffered) send into:
+        #   pull  -- driving the weights generator (FSDP full_tensor all-gathers + chunking)
+        #   fill  -- copying chunks into the fixed send buffer
+        #   sync  -- cuda synchronize at bucket boundaries (exposed gather/fill kernel time)
+        #   wait  -- awaiting the previous bucket's broadcast (send time not hidden by overlap)
+        _prof = bool(os.environ.get("VERL_PROFILE_NCCL_SEND"))
+        _t = {"pull": 0.0, "fill": 0.0, "sync": 0.0, "wait": 0.0, "buckets": 0}
+
         start_time = time.time()
         bucket_meta: dict[str, TensorMeta] = {}
         offset = 0
-        async for tensor_meta, chunk in split_weight_chunks(weights, self.bucket_size):
+        chunks = split_weight_chunks(weights, self.bucket_size)
+        while True:
+            _t0 = time.perf_counter()
+            try:
+                tensor_meta, chunk = await anext(chunks)
+            except StopAsyncIteration:
+                break
+            _t["pull"] += time.perf_counter() - _t0
+
             # fill the tensor bucket
             if offset + tensor_meta.chunk_size > self.bucket_size:
+                _t0 = time.perf_counter()
                 torch.cuda.synchronize()
+                _t["sync"] += time.perf_counter() - _t0
 
                 # wait previous broadcast op finish
+                _t0 = time.perf_counter()
                 if broadcast_op is not None:
                     await broadcast_op.wait_for_complete()
+                _t["wait"] += time.perf_counter() - _t0
+                _t["buckets"] += 1
 
                 broadcast_op = BroadcastOperation(
                     rank=self.rank,
@@ -279,11 +307,16 @@ class NCCLCheckpointEngine(CheckpointEngine):
 
             tensor_meta.offset = offset
             bucket_meta[tensor_meta.name] = tensor_meta
+            _t0 = time.perf_counter()
             send_buf[offset : offset + tensor_meta.chunk_size] = cp.asarray(chunk)
+            _t["fill"] += time.perf_counter() - _t0
             offset += tensor_meta.chunk_size
 
         # broadcast last bucket
+        _t0 = time.perf_counter()
         torch.cuda.synchronize()
+        _t["sync"] += time.perf_counter() - _t0
+        _t0 = time.perf_counter()
         if broadcast_op is not None:
             await broadcast_op.wait_for_complete()
 
@@ -296,6 +329,16 @@ class NCCLCheckpointEngine(CheckpointEngine):
             topic=self.topic,
         )
         await broadcast_op.wait_for_complete()
+        _t["wait"] += time.perf_counter() - _t0
+        _t["buckets"] += 1
+        if _prof:
+            print(
+                f"[nccl-send-profile] v={global_steps} buckets={_t['buckets']} "
+                f"pull(gather)={_t['pull']:.3f}s fill={_t['fill']:.3f}s "
+                f"sync={_t['sync']:.3f}s wait(broadcast)={_t['wait']:.3f}s "
+                f"total={time.time() - start_time:.3f}s",
+                flush=True,
+            )
         logger.info(f"Rank {self.rank} send weights done, time cost: {time.time() - start_time:.2f}s")
 
     @torch.no_grad()
@@ -320,6 +363,8 @@ class NCCLCheckpointEngine(CheckpointEngine):
         assert self.rank > 0, "Rank 0 should not receive weights."
         send_buf, recv_buf = self.send_buf, self.recv_buf
         total_bytes, total_params = 0, 0
+        _prof = bool(os.environ.get("VERL_SYNC_PROFILE"))
+        _wait = _wire = 0.0
 
         # receive first bucket
         start_time = time.time()
@@ -334,6 +379,8 @@ class NCCLCheckpointEngine(CheckpointEngine):
         metadata = await broadcast_op.wait_for_complete()
         total_bytes += self.bucket_size
         total_params += len(metadata["bucket_meta"])
+        _wait += getattr(broadcast_op, "meta_wait_s", 0.0)
+        _wire += getattr(broadcast_op, "wire_s", 0.0)
 
         # swap send_buf and recv_buf
         send_buf, recv_buf = recv_buf, send_buf
@@ -357,6 +404,8 @@ class NCCLCheckpointEngine(CheckpointEngine):
             metadata = await broadcast_op.wait_for_complete()
             total_bytes += self.bucket_size
             total_params += len(metadata["bucket_meta"])
+            _wait += getattr(broadcast_op, "meta_wait_s", 0.0)
+            _wire += getattr(broadcast_op, "wire_s", 0.0)
 
             # 4. swap send_buf and recv_buf
             torch.cuda.synchronize()  # sync non-blocking copy
@@ -367,6 +416,12 @@ class NCCLCheckpointEngine(CheckpointEngine):
             tensor = send_buf[tensor_meta.offset : tensor_meta.offset + tensor_meta.chunk_size]
             yield tensor_meta, tensor
 
+        if _prof:
+            print(
+                f"[nccl-recvwire-profile] buckets~{total_bytes // self.bucket_size} "
+                f"meta_wait(producer stall)={_wait:.3f}s wire(broadcast)={_wire:.3f}s",
+                flush=True,
+            )
         time_cost = time.time() - start_time
         bandwidth = total_bytes / time_cost / (1024 * 1024 * 1024)
         logger.info(

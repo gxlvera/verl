@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import os
 from typing import Generator
 from unittest.mock import patch
@@ -59,6 +60,14 @@ from .base import CheckpointEngineRegistry
 from .nccl_checkpoint_engine import MasterMetadata, NCCLCheckpointEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _prof_now(enabled: bool) -> float:
+    """perf_counter with a CUDA sync when profiling -- keeps timings attributable."""
+    if enabled and torch.cuda.is_available():
+        torch.cuda.synchronize()
+    return time.perf_counter()
+
 
 
 @CheckpointEngineRegistry.register("delta")
@@ -170,13 +179,21 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
         n = 0
         total = 0
         wire_bytes = 0
+        _prof = bool(os.environ.get("VERL_PROFILE_DELTA_SEND"))
+        _produce = _publish = 0.0
+        _t0 = _prof_now(_prof)
         for f in flush_iter:
+            _t1 = _prof_now(_prof)
+            _produce += _t1 - _t0
             if pending is not None:
                 self._publish_flush(pending, first, is_last=False)
                 n += 1
                 total += int(pending.values_gpu.numel())
                 wire_bytes += int(pending.positions_cpu.numel()) + int(pending.values_gpu.nbytes)
             pending = f
+            _t0 = _prof_now(_prof)
+            _publish += _t0 - _t1
+        _t1 = _prof_now(_prof)
         if pending is not None:
             self._publish_flush(pending, first, is_last=True)
             n += 1
@@ -184,6 +201,13 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
             wire_bytes += int(pending.positions_cpu.numel()) + int(pending.values_gpu.nbytes)
         else:
             self._publish_terminal(first)
+        _publish += _prof_now(_prof) - _t1
+        if _prof:
+            print(
+                f"[delta-send-profile] produce(diff+encode)={_produce:.3f}s "
+                f"publish(pack+bcast)={_publish:.3f}s flushes={n}",
+                flush=True,
+            )
         logger.info(
             "delta-nccl send v=%s %s flushes=%d nnz=%d (streamed)",
             global_steps, tag, n, total,
@@ -314,9 +338,14 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
             "delta checkpoint engine does not support PD disaggregation"
         )
         applied = 0
+        _prof = bool(os.environ.get("VERL_SYNC_PROFILE"))
+        _t = {"meta_wait": 0.0, "recv": 0.0, "dispatch": 0.0}
         while True:
+            _t0 = _prof_now(_prof)
             self.socket.recv_string()
             meta = self.socket.recv_pyobj()
+            _t1 = _prof_now(_prof)
+            _t["meta_wait"] += _t1 - _t0
             if meta.get("terminal_empty"):
                 break
 
@@ -332,6 +361,8 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
                 collective.broadcast(pos, src_rank=0, group_name=self.group_name)
                 collective.broadcast(val_u8, src_rank=0, group_name=self.group_name)
             val = val_u8.view(val_dtype)
+            _t2 = _prof_now(_prof)
+            _t["recv"] += _t2 - _t1
 
             spec_bytes = json.dumps(meta["spec"]).encode()
             spec_t = torch.frombuffer(bytearray(spec_bytes), dtype=torch.uint8).to("cuda")
@@ -345,9 +376,17 @@ class DeltaCheckpointEngine(NCCLCheckpointEngine):
                 flush_cache=bool(meta["is_last"]),
             )
             applied += 1
+            _t["dispatch"] += _prof_now(_prof) - _t2
             del pos, val_u8, val, spec_t
             if meta["is_last"]:
                 break
+        if _prof and applied:
+            print(
+                f"[delta-recv-profile] rank={self.rank} flushes={applied} "
+                f"meta_wait={_t['meta_wait']:.3f}s recv(bcast)={_t['recv']:.3f}s "
+                f"dispatch(ipc+apply)={_t['dispatch']:.3f}s",
+                flush=True,
+            )
 
         if engine is not None and server_adapter._is_server_tp_leader() and global_steps is not None:
             await server_adapter.server_actor.set_global_steps.remote(global_steps)
@@ -479,10 +518,15 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
         total_elems = 0
         wire_bytes = 0
 
+        _prof = bool(os.environ.get("VERL_PROFILE_DELTA_SEND"))
+        _pt = {"snap": 0.0, "gather": 0.0, "bcast": 0.0}
+
         def _emit(is_last):
             nonlocal pending, n_flushes, wire_bytes
             if pending is not None:
+                _e0 = _prof_now(_prof)
                 self._publish_dense_flush(pending[0], pending[1], is_last=is_last)
+                _pt["bcast"] += _prof_now(_prof) - _e0
                 n_flushes += 1
                 wire_bytes += int(pending[1].nbytes)
                 pending = None
@@ -508,15 +552,19 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
             bucket_bytes = 0
 
         for name, local, offset, full_numel, full_shape, contributes in weights:
+            _s0 = _prof_now(_prof)
             local = local.detach().contiguous().view(-1)
             snap = self._shard_snap.get(name)
             if snap is None or snap.numel() != local.numel():
                 snap = torch.empty_like(local, device="cpu", pin_memory=True)
             snap.copy_(local, non_blocking=True)
             self._shard_snap[name] = snap
+            _s1 = _prof_now(_prof)
+            _pt["snap"] += _s1 - _s0
 
             shard = local if contributes else torch.empty(0, dtype=local.dtype, device=local.device)
             full = gather_dense_to_rank0(shard, offset if contributes else 0, full_numel)
+            _pt["gather"] += _prof_now(_prof) - _s1
             if is_r0:
                 total_elems += int(full_numel)
                 bucket.append((name, str(local.dtype).replace("torch.", ""), list(full_shape), full))
@@ -539,6 +587,12 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
                 "checkpoint_engine/payload_mbytes": wire_bytes / (1 << 20),
                 "checkpoint_engine/flushes": float(n_flushes),
             }
+        if _prof:
+            print(
+                f"[delta-seed-profile] rank={self.rank} snap(pin+copy)={_pt['snap']:.3f}s "
+                f"gather(dense)={_pt['gather']:.3f}s bcast={_pt['bcast']:.3f}s flushes={n_flushes}",
+                flush=True,
+            )
         logger.info(
             "delta-sharded send v=%s DENSE-SEED flushes=%d elems=%d",
             global_steps, n_flushes, total_elems,
@@ -562,10 +616,15 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
         total_elems = 0
         wire_bytes = 0
 
+        _prof = bool(os.environ.get("VERL_PROFILE_DELTA_SEND"))
+        _pt = {"snap": 0.0, "diff": 0.0, "gather": 0.0, "pack": 0.0, "bcast": 0.0}
+
         def _emit(is_last):
             nonlocal pending, n_flushes
             if pending is not None:
+                _e0 = _prof_now(_prof)
                 self._publish_flush(pending, first, is_last=is_last)
+                _pt["bcast"] += _prof_now(_prof) - _e0
                 n_flushes += 1
                 pending = None
 
@@ -602,29 +661,39 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
             if not group:
                 return
             dev = group[0][4].device
+            _g0 = _prof_now(_prof)
             idx_concat = torch.cat([g[4] for g in group])
             val_concat = torch.cat([g[5] for g in group])
             counts = torch.tensor([int(g[4].numel()) for g in group], dtype=torch.int64, device=dev)
             gathered = gather_v_batched_to_rank0(idx_concat, val_concat, counts)
+            _g1 = _prof_now(_prof)
+            _pt["gather"] += _g1 - _g0
             if is_r0:
                 for (name, dtype_str, full_shape, full_numel, _gi, _gv), (aidx, aval) in zip(group, gathered):
                     _consume(name, dtype_str, full_shape, full_numel, aidx, aval)
+                _pt["pack"] += _prof_now(_prof) - _g1
             group = []
 
         for name, local, offset, _full_numel, full_shape, contributes in weights:
+            _s0 = _prof_now(_prof)
             local = local.detach().contiguous().view(-1)
             snap = self._shard_snap.get(name)
             if snap is None or snap.numel() != local.numel():
                 snap = torch.empty_like(local, device="cpu", pin_memory=True)
             if contributes:
                 base = snap.to(local.device, non_blocking=True)
+                _s1 = _prof_now(_prof)
+                _pt["snap"] += _s1 - _s0
                 gidx, gval = shard_delta_indices(local, base, offset)
+                _pt["diff"] += _prof_now(_prof) - _s1
             else:
                 # replicated param owned by another rank; contribute nothing but keep lockstep.
                 gidx = torch.empty(0, dtype=torch.int64, device=local.device)
                 gval = torch.empty(0, dtype=local.dtype, device=local.device)
+            _s2 = _prof_now(_prof)
             snap.copy_(local, non_blocking=True)  # update snapshot to current shard
             self._shard_snap[name] = snap
+            _pt["snap"] += _prof_now(_prof) - _s2
 
             if batch_k > 1:
                 group.append((name, str(local.dtype).replace("torch.", ""), full_shape, _full_numel, gidx, gval))
@@ -659,6 +728,13 @@ class DeltaShardedCheckpointEngine(DeltaCheckpointEngine):
                 "checkpoint_engine/payload_mbytes": wire_bytes / (1 << 20),
                 "checkpoint_engine/flushes": float(n_flushes),
             }
+        if _prof:
+            print(
+                f"[delta-sharded-send-profile] rank={self.rank} snap(h2d+d2h)={_pt['snap']:.3f}s "
+                f"diff={_pt['diff']:.3f}s gather={_pt['gather']:.3f}s pack={_pt['pack']:.3f}s "
+                f"bcast={_pt['bcast']:.3f}s flushes={n_flushes}",
+                flush=True,
+            )
         logger.info(
             "delta-sharded send v=%s %s flushes=%d (streamed)",
             global_steps, "FULL" if first else "delta", n_flushes,

@@ -136,26 +136,50 @@ def iter_delta_flushes(
         logger.info("DeltaState seeded with %d HF tensors", len(seed))
         return
 
+    import os as _os
+    import time as _time
+
+    _prof = bool(_os.environ.get("VERL_PROFILE_DELTA_SEND"))
+    _t = {"pull": 0.0, "prefetch": 0.0, "diff": 0.0, "encode": 0.0}
+
+    def _now():
+        if _prof and torch.cuda.is_available():
+            torch.cuda.synchronize()
+        return _time.perf_counter()
+
     bucket = DeltaBucket()
     pending_chunk: list[tuple[str, torch.Tensor]] | None = None
     pending_prefetch: tuple[list[torch.Tensor], torch.cuda.Event] | None = None
 
+    _t0 = _now()
     for hf_chunk in _chunked(weights, chunk_params):
+        _t1 = _now()
+        _t["pull"] += _t1 - _t0
         next_prefetch = state.prefetch_snapshot(hf_chunk)
+        _t2 = _now()
+        _t["prefetch"] += _t2 - _t1
         if pending_chunk is not None and pending_prefetch is not None:
             diffs = state.compute_diffs(pending_chunk, prefetched=pending_prefetch)
             state.update_snapshot_async(pending_chunk)
+            _t3 = _now()
+            _t["diff"] += _t3 - _t2
             chunk = encode_chunk(diffs, encoding)
+            _t["encode"] += _now() - _t3
             if chunk.params:
                 if bucket.should_flush_before_add(chunk, bucket_bytes):
                     yield _materialize_flush(bucket, encoding)
                 bucket.add(chunk)
         pending_chunk, pending_prefetch = hf_chunk, next_prefetch
+        _t0 = _now()
 
     if pending_chunk is not None and pending_prefetch is not None:
+        _t2 = _now()
         diffs = state.compute_diffs(pending_chunk, prefetched=pending_prefetch)
         state.update_snapshot_async(pending_chunk)
+        _t3 = _now()
+        _t["diff"] += _t3 - _t2
         chunk = encode_chunk(diffs, encoding)
+        _t["encode"] += _now() - _t3
         if chunk.params:
             if bucket.should_flush_before_add(chunk, bucket_bytes):
                 yield _materialize_flush(bucket, encoding)
@@ -163,5 +187,11 @@ def iter_delta_flushes(
 
     if bucket.has_updates:
         yield _materialize_flush(bucket, encoding)
+    if _prof:
+        print(
+            f"[delta-base-produce-profile] pull(full_tensor gather)={_t['pull']:.3f}s "
+            f"snap_prefetch={_t['prefetch']:.3f}s diff={_t['diff']:.3f}s encode={_t['encode']:.3f}s",
+            flush=True,
+        )
 
     state.flush_snapshot()

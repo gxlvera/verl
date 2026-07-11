@@ -501,8 +501,19 @@ class CheckpointEngineManager:
             ray.get(self.actor_wg.update_weights(global_steps=global_steps, mode=self.backend))
             return {}
 
+        import os as _os
+        import time as _time
+
+        _prof = bool(_os.environ.get("VERL_SYNC_PROFILE"))
+        _marks = [("start", _time.perf_counter())]
+
+        def _mark(name):
+            if _prof:
+                _marks.append((name, _time.perf_counter()))
+
         # 1. abort and save all unfinished requests for partial rollout
         await self.abort_replicas()
+        _mark("abort")
 
         # 2. create a temporay worker group for all replicas
         workers = []
@@ -510,12 +521,15 @@ class CheckpointEngineManager:
             workers.extend(replica.workers)
         rollout = RayWorkerGroup(worker_handles=workers, ray_cls_with_init=RayClassWithInitArgs(cls=_worker_cls))
         actor_wg = self.actor_wg
+        _mark("build_wg")
 
         # 3. release kv_cache before weight sync (weights stay in place)
         await self.release_kv_cache_replicas()
+        _mark("release_kv")
 
         # 4. build process group
         self.build_process_group(rollout)
+        _mark("build_pg")
 
         # 5. update weights of all workers
         results = ray.get(
@@ -524,6 +538,7 @@ class CheckpointEngineManager:
         )
         # The sender workers return the engine's per-sync metrics (empty for
         # backends that don't track any); merge and hand them to the trainer.
+        _mark("update_rpc")
         sync_metrics: dict = {}
         for result in results[: actor_wg.world_size]:
             if isinstance(result, dict):
@@ -535,11 +550,20 @@ class CheckpointEngineManager:
             + rollout.execute_checkpoint_engine(["finalize"] * rollout.world_size)
         )
 
+        _mark("finalize")
+
         # 7. restore kv_cache after weight sync
         await self.resume_kv_cache_replicas()
+        _mark("resume_kv")
 
         # 8. resume all unfinished requests for partial rollout
         await self.resume_generation_replicas()
+        _mark("resume_gen")
+        if _prof:
+            spans = ", ".join(
+                f"{name}={t1 - t0:.3f}s" for (_, t0), (name, t1) in zip(_marks, _marks[1:])
+            )
+            print(f"[sync-profile] manager: {spans} total={_marks[-1][1] - _marks[0][1]:.3f}s", flush=True)
 
         return sync_metrics
 

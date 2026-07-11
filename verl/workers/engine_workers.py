@@ -698,13 +698,28 @@ class ActorRolloutRefWorker(Worker, DistProfilerExtension):
 
         # 0. send_weights only for async training with disaggregated trainer and rollout
         if effective_mode != "naive":
+            import os as _os
+            import time as _time
+
+            _prof = bool(_os.environ.get("VERL_SYNC_PROFILE"))
+            _t0 = _time.perf_counter()
             # The sharded delta engine diffs each rank's local FSDP shard (no all-gather),
             # so it consumes the sharded param generator instead of the full-tensor one.
             if effective_mode == "delta_sharded":
                 per_tensor_param, _ = self.actor.engine.get_per_tensor_param_shard()
             else:
                 per_tensor_param, _ = self.actor.engine.get_per_tensor_param()
+            if _prof:
+                torch.cuda.synchronize()
+            _t1 = _time.perf_counter()
             await self.checkpoint_engine.send_weights(per_tensor_param, global_steps=global_steps)
+            if _prof:
+                torch.cuda.synchronize()
+                print(
+                    f"[sync-profile] actor rank={torch.distributed.get_rank()} "
+                    f"export_gen_create={_t1 - _t0:.3f}s send_weights={_time.perf_counter() - _t1:.3f}s",
+                    flush=True,
+                )
             # Engines are registry-pluggable and not required to subclass CheckpointEngine.
             return getattr(self.checkpoint_engine, "pop_sync_metrics", dict)()
 
