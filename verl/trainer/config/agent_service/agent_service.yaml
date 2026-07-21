@@ -1,0 +1,116 @@
+# Ray RPC actor settings. Unspecified lifecycle and retry behavior uses Ray defaults.
+ray_actor:
+
+  # Fully qualified plain class or Ray ActorClass implementing the Agent Service Ray RPC contract.
+  actor_class: null
+
+  # Ray scheduling and resource options for the Agent Service actor.
+  actor_options:
+
+    # CPU resources reserved for the Service Actor and its V0 LocalExecutionBackend.
+    num_cpus: 1
+
+# V0 supports only the LocalExecutionBackend.
+execution_backend:
+
+  # ExecutionBackend kind selected once for this experiment.
+  kind: local
+
+# Proxy protocol used to call the fixed rollout inference replicas.
+# Supported values: openai_chat_completions, openai_responses, anthropic_messages, generate.
+upstream_protocol: openai_chat_completions
+
+# Optional Proxy topology, routing, and trajectory-retention settings.
+proxy:
+
+  # Public protocol exposed to AgentRuntime.
+  frontend_protocol: openai_chat_completions
+
+  # Number of logical Proxy replicas requested from the server implementation.
+  replicas: 1
+
+  # V0 session routing policy.
+  session_routing: sticky_random
+
+# Experiment-level Task admission and backpressure settings.
+admission:
+
+  # Maximum number of concurrently running Tasks.
+  max_concurrent_tasks: 512
+
+  # Maximum number of queued Tasks before rejecting submissions.
+  max_queued_tasks: 1024
+
+  # Backpressure policy applied at the queue limit.
+  backpressure: reject
+
+# Default Task timeout, cancellation, cleanup, and artifact-retention policy.
+default_lifecycle:
+
+  # Default wall-clock timeout for one Task.
+  timeout_seconds: 3600
+
+  # Time allowed for Task cleanup after execution/reward completes.
+  cleanup_timeout_seconds: 60
+
+# Local SDK limit; null lets the service admission controller own backpressure.
+max_in_flight: null
+
+# Overall timeout for one rollout batch.
+wait_timeout_seconds: 3600
+
+# Timeout for the Service Actor to become READY.
+ready_timeout_seconds: 300
+
+# Grace period used when TaskRunner stops the Service Actor.
+shutdown_timeout_seconds: 60
+
+# Timeout for non-long-poll Ray RPCs from the Driver SDK.
+rpc_timeout_seconds: 30
+
+# Static control-plane fields merged with each DataProto sample by the built-in adapter.
+# Per-sample non-tensor fields are carried under TaskSpec.sample_fields using their
+# original names; binary multimodal values remain inline at their original field paths.
+task:
+
+  # Optional static ProblemSpec fields. Per-sample raw_prompt always supplies messages.
+  problem: {}
+
+  # AgentSpec shared by Tasks.
+  agent:
+
+    # Root directory or package containing the Agent implementation.
+    artifact: null
+
+    # Agent-specific parameters such as max_turns.
+    config: {}
+
+    # Public Proxy protocol used by this Agent.
+    frontend_protocol: openai_chat_completions
+
+  # Task-level command ExecutionSpec shared by Tasks.
+  execution:
+
+    # Command launched relative to the Agent artifact root.
+    command: null
+
+    # Working directory relative to the Agent artifact root.
+    working_dir: "."
+
+  # Optional EnvironmentSpec shared by Tasks.
+  environment: null
+
+  # RewardSpec defaults; per-sample reward_model is merged into verifier.
+  reward:
+
+    # Static VerifierSpec fields merged over each sample's reward_model.
+    verifier: {}
+
+    # Required RewardFunctionSpec mapping verifier output to final reward.
+    reward_function: {}
+
+  # GenerationSpec overrides; rollout sampling settings are used by default.
+  generation: {}
+
+  # Optional TaskLifecycleSpec override.
+  lifecycle: null

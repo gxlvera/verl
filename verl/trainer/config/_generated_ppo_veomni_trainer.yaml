@@ -836,6 +836,46 @@ distillation:
         response_length: ${oc.select:actor_rollout_ref.rollout.response_length}
         temperature: ${oc.select:actor_rollout_ref.rollout.temperature}
   teacher_key: data_source
+agent_service:
+  ray_actor:
+    actor_class: null
+    actor_options:
+      num_cpus: 1
+  execution_backend:
+    kind: local
+  upstream_protocol: openai_chat_completions
+  proxy:
+    frontend_protocol: openai_chat_completions
+    replicas: 1
+    session_routing: sticky_random
+  admission:
+    max_concurrent_tasks: 512
+    max_queued_tasks: 1024
+    backpressure: reject
+  default_lifecycle:
+    timeout_seconds: 3600
+    cleanup_timeout_seconds: 60
+  max_in_flight: null
+  wait_timeout_seconds: 3600
+  ready_timeout_seconds: 300
+  shutdown_timeout_seconds: 60
+  rpc_timeout_seconds: 30
+  task:
+    problem: {}
+    agent:
+      artifact: null
+      config: {}
+      frontend_protocol: openai_chat_completions
+    execution:
+      command: null
+      working_dir: .
+    environment: null
+    reward:
+      verifier: {}
+      reward_function: {}
+    generation: {}
+    lifecycle: null
+  enabled: false
 trainer:
   balance_batch: true
   total_epochs: 30

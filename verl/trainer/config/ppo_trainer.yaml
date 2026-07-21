@@ -42,6 +42,9 @@ defaults:
   # distillation config
   - distillation@distillation: distillation
 
+  # Agent Service defaults. The local enabled field below controls whether they are consumed.
+  - agent_service@agent_service: agent_service
+
   # load the reference default config, then apply the fields in the current yaml
   # self config override anything above
   - _self_
@@ -54,6 +57,12 @@ actor_rollout_ref:
 
   # Timeout for operations executed against the process group
   nccl_timeout: 600
+
+# Experiment-scoped Agent Service integration.
+agent_service:
+
+  # Whether TaskRunner should launch Agent Service and use it for rollout.
+  enabled: false
 
 # config for the algorithm
 algorithm:

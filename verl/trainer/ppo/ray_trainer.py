@@ -20,6 +20,7 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import json
 import os
+import time
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -344,6 +345,9 @@ class RayPPOTrainer:
 
         self.use_rm = need_reward_model(self.config)
 
+        self.agent_service_enabled = bool(self.config.get("agent_service", {}).get("enabled", False))
+        self.rollout_adapter = None
+
         self.use_critic = need_critic(self.config)
         self.ray_worker_group_cls = ray_worker_group_cls
         self.device_name = device_name if device_name else self.config.trainer.device
@@ -633,10 +637,24 @@ class RayPPOTrainer:
             }
             print(f"test_gen_batch meta info: {test_gen_batch.meta_info}")
 
-            # pad to be divisible by dp_size
-            size_divisor = self.config.actor_rollout_ref.rollout.agent.num_workers
-            test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, size_divisor)
-            test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
+            if self.rollout_adapter is not None:
+                # Agent Service accepts arbitrary batch sizes; synthetic padding
+                # would create real external Tasks and corrupt validation counts.
+                test_gen_batch_padded = test_gen_batch
+                pad_size = 0
+            else:
+                size_divisor = self.config.actor_rollout_ref.rollout.agent.num_workers
+                test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, size_divisor)
+            if self.rollout_adapter is not None:
+                indexed_task_ids = self.rollout_adapter.submit_batch(test_gen_batch_padded, config=self.config)
+                test_output_gen_batch_padded = self.rollout_adapter.wait_batch(
+                    indexed_task_ids,
+                    timeout=float(self.config.agent_service.wait_timeout_seconds),
+                )
+            else:
+                if self.async_rollout_manager is None:
+                    raise RuntimeError("Native rollout manager is unavailable")
+                test_output_gen_batch_padded = self.async_rollout_manager.generate_sequences(test_gen_batch_padded)
 
             if self.use_rm and "rm_scores" not in test_output_gen_batch_padded.batch.keys():
                 # for colocate reward models, we need to sleep rollout model
@@ -893,17 +911,20 @@ class RayPPOTrainer:
         if self.ref_in_actor:
             self.ref_policy_wg = self.actor_rollout_wg
 
-        # create reward loop manager
-        from verl.experimental.reward_loop import RewardLoopManager
+        # Agent Service finalizes trajectories and computes reward. Its driver
+        # path must not create verl's native reward loop workers.
+        if self.agent_service_enabled:
+            self.reward_loop_manager = None
+        else:
+            from verl.experimental.reward_loop import RewardLoopManager
 
-        # initalize reward loop manager
-        # reward model (colocate or standalone): get resource_pool
-        # no reward model: resource_pool = None
-        resource_pool = self.resource_pool_manager.get_resource_pool(Role.RewardModel) if self.use_rm else None
-        self.reward_loop_manager = RewardLoopManager(
-            config=self.config,
-            rm_resource_pool=resource_pool,
-        )
+            # reward model (colocate or standalone): get resource_pool
+            # no reward model: resource_pool = None
+            resource_pool = self.resource_pool_manager.get_resource_pool(Role.RewardModel) if self.use_rm else None
+            self.reward_loop_manager = RewardLoopManager(
+                config=self.config,
+                rm_resource_pool=resource_pool,
+            )
 
         # create async rollout manager and request scheduler
         # Note: mode is always "async" since sync mode is deprecated
@@ -923,33 +944,33 @@ class RayPPOTrainer:
             self.teacher_model_manager = None
             self.distillation_config = None
 
-        # Support custom AgentLoopManager via config
-        manager_class_fqn = self.config.actor_rollout_ref.rollout.get("agent", {}).get("agent_loop_manager_class")
-        if manager_class_fqn:
-            AgentLoopManager = load_class_from_fqn(manager_class_fqn, "AgentLoopManager")
-        else:
-            from verl.experimental.agent_loop import AgentLoopManager
-
-        # infrastructure overview: https://verl.readthedocs.io/en/latest/advance/reward_loop.html#architecture-design
-        # agent_reward_loop: streaming reward computation with actor rollout
-        # two conditions satisfied: (1) no reward model, or (2) reward model with extra resource pool
-        enable_agent_reward_loop = not self.use_rm or self.config.reward.reward_model.enable_resource_pool
-
         self.llm_server_manager = LLMServerManager.create(
             config=self.config, worker_group=self.actor_rollout_wg, rollout_resource_pool=actor_rollout_resource_pool
         )
 
-        # if enable_agent_reward_loop, we directly pass reward_loop_workers to agent loop manager
-        # to stream reward computation with actor rollout
-        # To stream teacher computation with actor rollout, we instead pass the full manager so that the
-        # teacher loop workers can sleep/wake together with rollout workers
-        reward_loop_worker_handles = self.reward_loop_manager.reward_loop_workers if enable_agent_reward_loop else None
-        self.async_rollout_manager = AgentLoopManager.create(
-            config=self.config,
-            llm_client=self.llm_server_manager.get_client(),
-            teacher_client=self.teacher_model_manager.get_client() if self.use_teacher_policy else None,
-            reward_loop_worker_handles=reward_loop_worker_handles,
-        )
+        if self.agent_service_enabled:
+            # TaskRunner owns the external Service Actor and injects a
+            # RolloutAdapter into fit(). Do not expose or create a native manager.
+            self.async_rollout_manager = None
+        else:
+            # Support custom AgentLoopManager via config
+            manager_class_fqn = self.config.actor_rollout_ref.rollout.get("agent", {}).get("agent_loop_manager_class")
+            if manager_class_fqn:
+                AgentLoopManager = load_class_from_fqn(manager_class_fqn, "AgentLoopManager")
+            else:
+                from verl.experimental.agent_loop import AgentLoopManager
+
+            # agent_reward_loop streams reward computation with native actor rollout
+            enable_agent_reward_loop = not self.use_rm or self.config.reward.reward_model.enable_resource_pool
+            reward_loop_worker_handles = (
+                self.reward_loop_manager.reward_loop_workers if enable_agent_reward_loop else None
+            )
+            self.async_rollout_manager = AgentLoopManager.create(
+                config=self.config,
+                llm_client=self.llm_server_manager.get_client(),
+                teacher_client=self.teacher_model_manager.get_client() if self.use_teacher_policy else None,
+                reward_loop_worker_handles=reward_loop_worker_handles,
+            )
 
         checkpoint_engine_config = omega_conf_to_dataclass(self.config.actor_rollout_ref.rollout.checkpoint_engine)
         # Support custom CheckpointEngineManager via config
@@ -966,6 +987,16 @@ class RayPPOTrainer:
 
         # sleep all replicas to load checkpoint
         self.checkpoint_manager.sleep_replicas()
+
+    def get_rollout_inference_addresses(self) -> list[str]:
+        """Return the fixed V0 inference registry after rollout workers start."""
+
+        if not hasattr(self, "llm_server_manager"):
+            raise RuntimeError("init_workers() must complete before discovering rollout inference addresses")
+        addresses = list(self.llm_server_manager.get_addresses())
+        if not addresses:
+            raise RuntimeError("No rollout inference replica addresses were discovered")
+        return addresses
 
     def _save_checkpoint(self):
         from verl.utils.fs import local_mkdir_safe
@@ -1364,13 +1395,20 @@ class RayPPOTrainer:
         critic_output = DataProto.from_single_dict(data={}, meta_info={"metrics": output})
         return critic_output
 
-    def fit(self):
+    def fit(self, rollout_adapter=None):
         """
         The training loop of PPO.
         The driver process only need to call the compute functions of the worker group through RPC
         to construct the PPO dataflow.
         The light-weight advantage computation is done on the driver process.
         """
+        if rollout_adapter is not None:
+            self.rollout_adapter = rollout_adapter
+        if self.agent_service_enabled and self.rollout_adapter is None:
+            raise ValueError("Agent Service is enabled but trainer.fit() received no RolloutAdapter")
+        if not self.agent_service_enabled and self.rollout_adapter is not None:
+            raise ValueError("A RolloutAdapter was provided while agent_service.enabled is false")
+
         if self._dump_executor._shutdown:
             self._init_dump_executor()
 
@@ -1472,13 +1510,35 @@ class RayPPOTrainer:
                     with marked_timer("gen", timing_raw, color="red"):
                         if curr_step_profile:
                             self.llm_server_manager.start_profile()
-                        combined_gen_output = self.async_rollout_manager.generate_sequences(combined_gen_batch)
+                        if self.rollout_adapter is not None:
+                            agent_service_started_at = time.perf_counter()
+                            submit_started_at = time.perf_counter()
+                            indexed_task_ids = self.rollout_adapter.submit_batch(
+                                combined_gen_batch,
+                                config=self.config,
+                            )
+                            submit_seconds = time.perf_counter() - submit_started_at
+                            wait_started_at = time.perf_counter()
+                            combined_gen_output = self.rollout_adapter.wait_batch(
+                                indexed_task_ids,
+                                timeout=float(self.config.agent_service.wait_timeout_seconds),
+                            )
+                            timing_raw.update(
+                                {
+                                    "agent_service/submit": submit_seconds,
+                                    "agent_service/wait": time.perf_counter() - wait_started_at,
+                                    "agent_service/total": time.perf_counter() - agent_service_started_at,
+                                }
+                            )
+                        else:
+                            if self.async_rollout_manager is None:
+                                raise RuntimeError("Native rollout manager is unavailable")
+                            combined_gen_output = self.async_rollout_manager.generate_sequences(combined_gen_batch)
+                            timing_raw.update(combined_gen_output.meta_info["timing"])
+                            combined_gen_output.meta_info.pop("timing", None)
                         self.checkpoint_manager.sleep_replicas()
                         if curr_step_profile:
                             self.llm_server_manager.stop_profile()
-
-                        timing_raw.update(combined_gen_output.meta_info["timing"])
-                        combined_gen_output.meta_info.pop("timing", None)
 
                     gen_batch_output = combined_gen_output.slice(0, num_sampled_prompts)
                     if "__do_sample__" in gen_batch_output.non_tensor_batch:

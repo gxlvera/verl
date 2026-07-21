@@ -167,6 +167,19 @@ class TaskRunner(BaseTaskRunner):
         pprint(OmegaConf.to_container(config, resolve=True))
         OmegaConf.resolve(config)
 
+        # Agent Service is opt-in; only import its SDK when enabled so verl still
+        # runs in deployments where the agent_service package is not on sys.path.
+        if config.get("agent_service", {}).get("enabled", False):
+            from agent_service.verl_adapter.config import validate_agent_service_config
+
+            validate_agent_service_config(config.agent_service)
+            if config.reward.reward_model.enable:
+                raise ValueError(
+                    "Agent Service computes reward inside the service; set reward.reward_model.enable=false"
+                )
+            if is_distillation_enabled(config.get("distillation")):
+                raise ValueError("Agent Service V0 does not yet support verl distillation/teacher loops")
+
         actor_rollout_cls, ray_worker_group_cls = self.add_actor_rollout_worker(config)
         self.add_critic_worker(config)
 
@@ -234,8 +247,31 @@ class TaskRunner(BaseTaskRunner):
             collate_fn=collate_fn,
             train_sampler=train_sampler,
         )
-        # Initialize the workers of the trainer.
-        trainer.init_workers()
+        agent_service_runtime = None
+        try:
+            # Initialize rollout replicas first. In Agent Service mode this does
+            # not create verl's native AgentLoopManager.
+            trainer.init_workers()
 
-        # Start the training process.
-        trainer.fit()
+            if config.agent_service.enabled:
+                from agent_service.verl_adapter.runtime import VerlAgentServiceRuntime
+
+                agent_service_runtime = VerlAgentServiceRuntime(
+                    trainer=trainer,
+                    config=config,
+                )
+                agent_service_runtime.start()
+                rollout_adapter = agent_service_runtime.get_rollout_adapter(
+                    tokenizer=tokenizer,
+                    processor=processor,
+                )
+                trainer.fit(rollout_adapter=rollout_adapter)
+            else:
+                trainer.fit()
+        except BaseException:
+            if agent_service_runtime is not None:
+                agent_service_runtime.close(raise_on_error=False)
+            raise
+        else:
+            if agent_service_runtime is not None:
+                agent_service_runtime.close()
