@@ -20,7 +20,10 @@ from agent_service.verl_adapter.config import validate_agent_service_config
 
 def test_startup_config_serializes_fixed_inference_registry():
     config = AgentServiceStartupConfig(
-        execution_backend={"kind": "local", "runtime_profile": "cpu"},
+        execution_backend={
+            "kind": "local",
+            "runtime": {"kind": "coroutine", "worker_processes": 4},
+        },
         inference=InferenceSpec(
             replica_endpoints=["http://replica-0:8000", "http://replica-1:8000"],
             upstream_protocol="openai_chat_completions",
@@ -30,7 +33,10 @@ def test_startup_config_serializes_fixed_inference_registry():
     )
 
     assert config.to_dict() == {
-        "execution_backend": {"kind": "local", "runtime_profile": "cpu"},
+        "execution_backend": {
+            "kind": "local",
+            "runtime": {"kind": "coroutine", "worker_processes": 4},
+        },
         "inference": {
             "replica_endpoints": ["http://replica-0:8000", "http://replica-1:8000"],
             "upstream_protocol": "openai_chat_completions",
@@ -74,9 +80,12 @@ def test_builtin_adapter_validates_required_task_bootstrap_fields():
     config = {
         "enabled": True,
         "ray_actor": {"actor_class": "package.AgentServiceActor"},
-        "execution_backend": {"kind": "local"},
+        "execution_backend": {
+            "kind": "local",
+            "runtime": {"kind": "process"},
+        },
         "upstream_protocol": "openai_chat_completions",
-        "max_in_flight": None,
+        "admission": {"max_concurrent_tasks": 512, "max_queued_tasks": 1024},
         "ready_timeout_seconds": 10,
         "wait_timeout_seconds": 10,
         "shutdown_timeout_seconds": 10,
@@ -99,4 +108,40 @@ def test_builtin_adapter_validates_required_task_bootstrap_fields():
 
     config["task"]["agent"]["frontend_protocol"] = "generate"
     with pytest.raises(ValueError, match="frontend_protocol"):
+        validate_agent_service_config(config)
+
+
+def test_builtin_adapter_validates_runtime_specific_agent_launch_fields():
+    config = {
+        "enabled": True,
+        "ray_actor": {"actor_class": "package.AgentServiceActor"},
+        "execution_backend": {
+            "kind": "local",
+            "runtime": {"kind": "coroutine", "worker_processes": 4},
+        },
+        "upstream_protocol": "openai_chat_completions",
+        "admission": {"max_concurrent_tasks": 512, "max_queued_tasks": 1024},
+        "ready_timeout_seconds": 10,
+        "wait_timeout_seconds": 10,
+        "shutdown_timeout_seconds": 10,
+        "rpc_timeout_seconds": 10,
+        "task": {
+            "agent": {
+                "artifact": "./agent",
+                "entrypoint": None,
+                "frontend_protocol": "openai_chat_completions",
+            },
+            "execution": {"command": None},
+            "reward": {"reward_function": {"kind": "binary"}},
+        },
+    }
+
+    with pytest.raises(ValueError, match="agent.entrypoint"):
+        validate_agent_service_config(config)
+
+    config["task"]["agent"]["entrypoint"] = "package.module:AgentLoop"
+    validate_agent_service_config(config)
+
+    config["admission"]["max_concurrent_tasks"] = 0
+    with pytest.raises(ValueError, match="max_concurrent_tasks"):
         validate_agent_service_config(config)

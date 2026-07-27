@@ -25,10 +25,20 @@ from omegaconf import OmegaConf
 
 from ..client_sdk.executor import AgentExecutor
 from ..client_sdk.transport import RayTransportClient
+from ..execution_backend import CoroutineRuntimeConfig, LocalExecutionBackendConfig
 from .config import AgentServiceStartupConfig, InferenceSpec
 from .rollout_adapter import RolloutAdapter
 
 logger = logging.getLogger(__name__)
+
+
+def _default_actor_num_cpus(startup_config: AgentServiceStartupConfig) -> int:
+    """Reserve the local worker pool in Ray when the user omits num_cpus."""
+
+    backend_config = LocalExecutionBackendConfig.from_dict(startup_config.execution_backend)
+    if isinstance(backend_config.runtime, CoroutineRuntimeConfig):
+        return backend_config.runtime.worker_processes
+    return 1
 
 
 def _load_class(fqn: str) -> type:
@@ -127,10 +137,7 @@ class VerlAgentServiceRuntime:
                 service_endpoint,
                 rpc_timeout_seconds=float(self._service_config["rpc_timeout_seconds"]),
             )
-            self._executor = AgentExecutor(
-                transport_client,
-                max_in_flight=self._service_config.get("max_in_flight"),
-            )
+            self._executor = AgentExecutor(transport_client)
             self._started = True
         except BaseException:
             self.close(raise_on_error=False)
@@ -168,6 +175,8 @@ class VerlAgentServiceRuntime:
         actor_config: Mapping[str, Any],
     ) -> dict[str, str]:
         options = dict(actor_config.get("actor_options") or {})
+        if options.get("num_cpus") is None:
+            options["num_cpus"] = _default_actor_num_cpus(startup_config)
         actor_name = options.setdefault("name", f"verl-agent-service-{uuid.uuid4().hex}")
         if not isinstance(actor_name, str) or not actor_name:
             raise ValueError("agent_service.ray_actor.actor_options.name must be a non-empty string")

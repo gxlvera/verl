@@ -115,6 +115,7 @@ class TaskSpec:
     environment: Mapping[str, Any] | None = None
     lifecycle: Mapping[str, Any] | None = None
     sample_fields: Mapping[str, Any] = field(default_factory=dict)
+    trajectory_selection: Mapping[str, Any] = field(default_factory=lambda: {"strategy": "longest", "config": {}})
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -124,6 +125,7 @@ class TaskSpec:
             "reward": _to_wire(self.reward),
             "generation": _to_wire(self.generation),
             "sample_fields": _to_wire(self.sample_fields),
+            "trajectory_selection": _to_wire(self.trajectory_selection),
         }
         if self.environment is not None:
             payload["environment"] = _to_wire(self.environment)

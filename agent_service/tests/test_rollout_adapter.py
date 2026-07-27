@@ -168,6 +168,63 @@ def test_adapter_restores_input_order_and_builds_training_dataproto():
     assert adapter.in_flight == set()
 
 
+def test_adapter_expands_multiple_server_selected_trajectories():
+    adapter = RolloutAdapter(
+        AgentExecutor(_FakeTransportClient(), wait_any_poll_timeout_seconds=1),
+        config=_config(),
+        tokenizer=_Tokenizer(),
+    )
+    input_batch = DataProto.from_dict(
+        tensors={"prompts": torch.tensor([[0, 0, 10, 11]])},
+        non_tensors={
+            "raw_prompt": _object_array([[{"role": "user", "content": "sample"}]]),
+            "uid": np.array(["uid-0"], dtype=object),
+        },
+    )
+    snapshot = TaskSnapshot(
+        task_id=TaskId("task-0"),
+        status=TaskStatus.SUCCEEDED,
+        trajectory={
+            "selector_name": "all",
+            "selected_bundle": {
+                "trajectories": [
+                    {
+                        "prompt_ids": [10, 11],
+                        "response_ids": [101],
+                        "loss_mask": [1],
+                        "loss_weight": [0.5],
+                        "response_logprobs": [-0.1],
+                        "num_turns": 1,
+                    },
+                    {
+                        "prompt_ids": [10, 11],
+                        "response_ids": [102, 103],
+                        "loss_mask": [1, 1],
+                        "loss_weight": [0.25, 1.0],
+                        "response_logprobs": [-0.2, -0.3],
+                        "num_turns": 2,
+                    },
+                ]
+            },
+        },
+        reward={"final_reward": 1.0},
+    )
+
+    output = adapter.build_verl_dataproto([snapshot], [input_batch[0]])
+
+    assert output.batch.batch_size == torch.Size([2])
+    assert output.batch["responses"].tolist() == [
+        [101, 0, 0, 0, 0],
+        [102, 103, 0, 0, 0],
+    ]
+    assert output.non_tensor_batch["uid"].tolist() == ["uid-0", "uid-0"]
+    assert output.non_tensor_batch["__num_turns__"].tolist() == [1, 2]
+    assert output.batch["loss_weight"].tolist() == [
+        [0.5, 0.0, 0.0, 0.0, 0.0],
+        [0.25, 1.0, 0.0, 0.0, 0.0],
+    ]
+
+
 def test_adapter_keeps_multimodal_payload_inline_in_messages():
     transport = _FakeTransportClient()
     executor = AgentExecutor(transport, wait_any_poll_timeout_seconds=1)
@@ -231,6 +288,27 @@ def test_sample_raw_prompt_overrides_static_problem_messages():
     task_spec = adapter.build_task_spec(batch[0])
 
     assert task_spec.problem["messages"] == [{"role": "user", "content": "sample"}]
+
+
+def test_task_spec_declares_server_side_trajectory_selection():
+    config = _config()
+    config.agent_service.task.trajectory_selection = {
+        "strategy": "all",
+        "config": {},
+    }
+    adapter = RolloutAdapter(
+        AgentExecutor(_FakeTransportClient(), wait_any_poll_timeout_seconds=1),
+        config=config,
+        tokenizer=_Tokenizer(),
+    )
+    batch = DataProto.from_dict(
+        tensors={"prompts": torch.tensor([[0, 10, 11, 12]])},
+        non_tensors={"raw_prompt": _object_array([[{"role": "user", "content": "sample"}]])},
+    )
+
+    task_spec = adapter.build_task_spec(batch[0])
+
+    assert task_spec.trajectory_selection == {"strategy": "all", "config": {}}
 
 
 def test_sample_agent_name_overrides_static_agent_name_like_legacy_agent_loop():

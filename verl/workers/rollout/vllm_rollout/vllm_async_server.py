@@ -44,6 +44,7 @@ from verl.utils.tokenizer import normalize_token_ids
 from verl.utils.vllm.vllm_fp8_utils import apply_vllm_fp8_patches
 from verl.workers.config import HFModelConfig, RolloutConfig
 from verl.workers.rollout.replica import RolloutMode, RolloutReplica, TokenOutput
+from verl.workers.rollout.token_http import register_agent_service_generate_route
 from verl.workers.rollout.utils import get_max_position_embeddings, qwen2_5_vl_dedup_image_tokens, run_uvicorn
 from verl.workers.rollout.vllm_rollout.utils import (
     VLLM_LORA_INT_ID,
@@ -479,6 +480,7 @@ class vLLMHttpServer:
         if "model_config" in build_app_sig.parameters:
             build_app_kwargs["model_config"] = engine_client.model_config
         app = build_app(args, **build_app_kwargs)
+        register_agent_service_generate_route(app, self.generate)
 
         init_app_sig = inspect.signature(init_app_state)
         if "vllm_config" in init_app_sig.parameters:

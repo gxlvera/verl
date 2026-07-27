@@ -35,11 +35,3 @@ class AgentServiceTimeoutError(AgentServiceError, TimeoutError):
 
 class AgentServiceProtocolError(AgentServiceError):
     """Raised when the service returns a response that violates the wire contract."""
-
-
-class MaxInFlightTasksError(AgentServiceError):
-    """Raised when submitting would exceed the executor's local in-flight limit."""
-
-    def __init__(self, max_in_flight: int):
-        super().__init__(f"AgentExecutor max_in_flight limit reached: {max_in_flight}")
-        self.max_in_flight = max_in_flight

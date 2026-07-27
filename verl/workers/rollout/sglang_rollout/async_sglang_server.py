@@ -51,6 +51,7 @@ from verl.workers.config import HFModelConfig, RolloutConfig
 from verl.workers.rollout.replica import RolloutMode, RolloutReplica, TokenOutput
 from verl.workers.rollout.sglang_rollout.sglang_rollout import _set_envs_and_config
 from verl.workers.rollout.sglang_rollout.utils import SGLANG_LORA_NAME
+from verl.workers.rollout.token_http import register_agent_service_generate_route
 from verl.workers.rollout.utils import get_max_position_embeddings, run_uvicorn
 
 logger = logging.getLogger(__file__)
@@ -427,6 +428,7 @@ class SGLangHttpServer:
         app.server_args = server_args
         app.warmup_thread_kwargs = {"server_args": server_args}
         app.warmup_thread_args = (server_args, None, None)
+        register_agent_service_generate_route(app, self.generate)
 
         # Manually add Prometheus middleware before starting server
         # This ensures /metrics endpoint is available immediately

@@ -20,7 +20,6 @@ from .errors import (
     AgentServiceError,
     AgentServiceProtocolError,
     AgentServiceTimeoutError,
-    MaxInFlightTasksError,
 )
 from .executor import AgentExecutor, TaskFuture, as_completed
 from .models import TaskError, TaskId, TaskSnapshot, TaskSpec, TaskStatus
@@ -33,7 +32,6 @@ __all__ = [
     "AgentServiceError",
     "AgentServiceProtocolError",
     "AgentServiceTimeoutError",
-    "MaxInFlightTasksError",
     "RayTransportClient",
     "TaskError",
     "TaskFuture",

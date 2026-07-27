@@ -7,8 +7,8 @@ ray_actor:
   # Ray scheduling and resource options for the Agent Service actor.
   actor_options:
 
-    # CPU resources reserved for the Service Actor and its V0 LocalExecutionBackend.
-    num_cpus: 1
+    # null derives coroutine worker_processes (or 1 for process runtime).
+    num_cpus: null
 
 # V0 supports only the LocalExecutionBackend.
 execution_backend:
@@ -16,9 +16,25 @@ execution_backend:
   # ExecutionBackend kind selected once for this experiment.
   kind: local
 
+  # Local AgentRuntime strategy selected once for this experiment.
+  runtime:
+
+    # coroutine: fixed worker-process pool, with one coroutine per white-box AgentLoop.
+    # process: one subprocess per black-box command AgentLoop.
+    kind: coroutine
+
+    # Required only for coroutine runtime; Tasks are balanced across these workers.
+    worker_processes: 4
+
+  # Grace period between terminating and killing a local child process.
+  terminate_grace_seconds: 10
+
+  # Timeout for all coroutine workers to report ready during Service bootstrap.
+  worker_start_timeout_seconds: 30
+
 # Proxy protocol used to call the fixed rollout inference replicas.
 # Supported values: openai_chat_completions, openai_responses, anthropic_messages, generate.
-upstream_protocol: openai_chat_completions
+upstream_protocol: generate
 
 # Optional Proxy topology, routing, and trajectory-retention settings.
 proxy:
@@ -31,6 +47,26 @@ proxy:
 
   # V0 session routing policy.
   session_routing: sticky_random
+
+  # HTTP listener used by local Agent runtimes. Port 0 chooses an ephemeral port.
+  host: 127.0.0.1
+  port: 0
+  advertised_host: null
+
+  # Exact-token endpoint exposed by each rollout inference replica.
+  upstream_generate_path: /agent_service/generate
+  upstream_timeout_seconds: 120
+  ready_timeout_seconds: 30
+  finalize_timeout_seconds: 60
+
+  # Existing verl ToolParser registry name, or null for text-only decoding.
+  tool_parser: null
+
+  continuous_token:
+    model_family: auto
+    chat_template_kwargs: {}
+
+  loss_materialization_policy: per_leaf
 
 # Experiment-level Task admission and backpressure settings.
 admission:
@@ -52,9 +88,6 @@ default_lifecycle:
 
   # Time allowed for Task cleanup after execution/reward completes.
   cleanup_timeout_seconds: 60
-
-# Local SDK limit; null lets the service admission controller own backpressure.
-max_in_flight: null
 
 # Overall timeout for one rollout batch.
 wait_timeout_seconds: 3600
@@ -82,6 +115,10 @@ task:
     # Root directory or package containing the Agent implementation.
     artifact: null
 
+    # Importable async function or zero-argument class used by coroutine runtime.
+    # The function, or the class's run method, receives one TaskExecutionSpec.
+    entrypoint: null
+
     # Agent-specific parameters such as max_turns.
     config: {}
 
@@ -91,7 +128,7 @@ task:
   # Task-level command ExecutionSpec shared by Tasks.
   execution:
 
-    # Command launched relative to the Agent artifact root.
+    # Required only for process runtime; launched relative to the Agent artifact root.
     command: null
 
     # Working directory relative to the Agent artifact root.
@@ -114,3 +151,8 @@ task:
 
   # Optional TaskLifecycleSpec override.
   lifecycle: null
+
+  # Server-side selection applied after Proxy returns the complete bundle.
+  trajectory_selection:
+    strategy: longest
+    config: {}

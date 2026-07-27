@@ -36,6 +36,7 @@ def test_task_spec_serializes_only_public_top_level_fields():
         "reward": {"verifier": {"kind": "answer_match"}},
         "generation": {"temperature": 0.7, "max_new_tokens": 128},
         "sample_fields": {},
+        "trajectory_selection": {"strategy": "longest", "config": {}},
         "lifecycle": {"timeout_seconds": 60},
     }
 

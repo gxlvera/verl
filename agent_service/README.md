@@ -9,14 +9,42 @@ integration, and server-side Agent Service components.
   `AgentExecutor`, and the Task wire models. It has no verl dependency.
 - `verl_adapter/` contains `VerlAgentServiceRuntime`, `RolloutAdapter`, and
   validation for verl's Agent Service configuration.
-- `proxy/` contains Proxy-owned helpers. It currently provides the
-  verl-independent tokenizer/processor loader.
+- `proxy/` contains the experiment-scoped HTTP Proxy, task-scoped sessions,
+  canonical routing, Continuous Token adapter, upstream client, and trajectory
+  materializer.
+- `trajectory_selection/` contains the AgentService-side selector registry,
+  built-in `all`/`longest` strategies, and complete-bundle retention helper.
+- `execution_backend/` contains the controller-facing execution contract and
+  the V0 `LocalExecutionBackend` implementations.
 - `agent_task_controller/` is the package for the server-side Agent Task
   Controller implementation.
 
-The V0 Controller, execution backend, Store, and AgentRuntime implementations
-can be added under their server-side packages without mixing them into the
-Driver SDK or verl adapter.
+The V0 Controller and Store can be added under their server-side packages
+without mixing them into the Driver SDK or verl adapter.
+
+## Local execution backend
+
+`LocalExecutionBackend` is selected once for an Agent Service instance and
+owns the private `session_id -> native runtime handle` mapping. It exposes the
+async `start`, `launch`, `inspect`, `wait`, `cancel`,
+`execute_in_environment`, `cleanup`, and `close` contract. Launch is
+idempotent for the same session and resolved `TaskExecutionSpec`; reusing a
+session with a different spec is rejected.
+
+Two local runtime modes are available:
+
+- `coroutine` starts a fixed number of persistent worker processes. Each
+  worker hosts multiple white-box AgentLoop coroutines. An entrypoint is an
+  importable async function accepting `TaskExecutionSpec`, or a zero-argument
+  class with an async `run(TaskExecutionSpec)` method.
+- `process` starts one subprocess for each black-box command Task. The Backend
+  owns its process group, exit status, stdout/stderr, timeout, and cancellation.
+
+Concurrency and queueing do not belong to the Backend or Driver SDK. The
+future AgentTaskController will apply the experiment-level
+`admission.max_concurrent_tasks` and `admission.max_queued_tasks` policy before
+calling `launch`. The Driver may submit a complete rollout batch without a
+second local in-flight limit.
 
 ## Runtime ownership
 
@@ -44,11 +72,10 @@ JSON-compatible endpoint with the actor name and Ray namespace. It resolves the
 handle internally and never passes the handle to Trainer, the rollout adapter,
 or an Agent Service RPC.
 
-V0 does not start FastAPI, uvicorn, or any other HTTP server in the Service
-Actor. Driver-to-service calls use Ray actor RPC. The request and response
-values are nevertheless restricted to JSON-compatible dictionaries, lists,
-strings, numbers, booleans, and null so a future HTTP transport does not change
-the `AgentExecutor.submit/get_status/wait_any/cancel` API used by Driver code.
+Driver-to-service control-plane calls continue to use Ray actor RPC. Separately,
+the Agent-facing Proxy starts an experiment-scoped FastAPI/uvicorn listener.
+Each Task receives a session-scoped URL and opaque credential; the Agent never
+receives rollout replica endpoints or credentials.
 
 The configured `agent_service.ray_actor.actor_class` may be a plain Python class
 or an existing Ray ActorClass. Its contract is:
@@ -102,11 +129,28 @@ verl modules and does not construct `HFModelConfig` or load model weights. It
 returns `processor=None` for text-only models and initializes the supported
 multimodal processor types using the same behavior as verl's legacy loader.
 
-The inference `upstream_protocol` is independent of the Agent's
-`frontend_protocol`. Public frontends support OpenAI Chat Completions, OpenAI
-Responses, and Anthropic Messages. Upstreams additionally support `generate`,
-the token-in/token-out `POST /generate` protocol exposed by compatible
-inference backends.
+The concrete V0 Proxy is constructed with:
+
+```python
+from agent_service import build_hosted_proxy
+
+proxy = build_hosted_proxy(startup_config)
+await proxy.start()
+```
+
+It exposes OpenAI Chat Completions and Anthropic Messages, including SSE and
+tool-use responses. OpenAI Responses remains deferred. The Proxy requires the
+token-in/token-out `POST /agent_service/generate` upstream protocol so every request carries
+the exact token IDs produced by Continuous Token.
+
+Routing happens before chat-template rendering. The only lineage authority is
+the canonical message prefix plus the canonical tool fingerprint. A same-chain
+continuation reuses the stored assistant output token IDs directly. A trusted
+Continuous Token builder may declare a model-specific tail-boundary removal
+(for example GLM's ambiguous observation/user stop token); Proxy validates that
+the retained prefix is byte-for-byte unchanged and records the removed token's
+ID, logprob, mask, and provenance. Undeclared removal or any other prefix
+rewrite still fails before inference.
 
 ## Driver data contract
 
@@ -133,7 +177,12 @@ decoder expects the token-level fields below:
 }
 ```
 
-`loss_mask` is accepted as an alias for `response_mask`.
+`loss_mask` is accepted as an alias for `response_mask`. A Task declares
+`trajectory_selection` with default strategy `longest`. Proxy finalization
+always returns and retains the complete bundle; AgentService applies the
+trusted server-side selector afterward. If `all` or a custom selector returns
+multiple trajectories, `RolloutAdapter` expands them into multiple output
+batch rows while duplicating the corresponding sample metadata.
 
 ### Per-sample fields and inline multimodal data
 
@@ -194,17 +243,45 @@ Agent Service defaults live in
 ```yaml
 agent_service:
   enabled: true
+  upstream_protocol: generate
   ray_actor:
     actor_class: your_package.AgentServiceActor
   execution_backend:
     kind: local
+    runtime:
+      kind: coroutine
+      worker_processes: 4
+  admission:
+    max_concurrent_tasks: 512
+    max_queued_tasks: 1024
+  task:
+    agent:
+      artifact: ./agents/my_agent
+      entrypoint: my_agent.agent_loop:run
+      frontend_protocol: openai_chat_completions
+    reward:
+      reward_function:
+        kind: binary
+    trajectory_selection:
+      strategy: longest
+      config: {}
+```
+
+For a black-box local Agent, replace the runtime and Task launch fields:
+
+```yaml
+agent_service:
+  execution_backend:
+    kind: local
+    runtime:
+      kind: process
+  admission:
+    max_concurrent_tasks: 512
+    max_queued_tasks: 1024
   task:
     agent:
       artifact: ./agents/my_agent
       frontend_protocol: openai_chat_completions
     execution:
       command: [python, main.py]
-    reward:
-      reward_function:
-        kind: binary
 ```

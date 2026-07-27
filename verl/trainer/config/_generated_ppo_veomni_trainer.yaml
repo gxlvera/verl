@@ -840,14 +840,31 @@ agent_service:
   ray_actor:
     actor_class: null
     actor_options:
-      num_cpus: 1
+      num_cpus: null
   execution_backend:
     kind: local
-  upstream_protocol: openai_chat_completions
+    runtime:
+      kind: coroutine
+      worker_processes: 4
+    terminate_grace_seconds: 10
+    worker_start_timeout_seconds: 30
+  upstream_protocol: generate
   proxy:
     frontend_protocol: openai_chat_completions
     replicas: 1
     session_routing: sticky_random
+    host: 127.0.0.1
+    port: 0
+    advertised_host: null
+    upstream_generate_path: /agent_service/generate
+    upstream_timeout_seconds: 120
+    ready_timeout_seconds: 30
+    finalize_timeout_seconds: 60
+    tool_parser: null
+    continuous_token:
+      model_family: auto
+      chat_template_kwargs: {}
+    loss_materialization_policy: per_leaf
   admission:
     max_concurrent_tasks: 512
     max_queued_tasks: 1024
@@ -855,7 +872,6 @@ agent_service:
   default_lifecycle:
     timeout_seconds: 3600
     cleanup_timeout_seconds: 60
-  max_in_flight: null
   wait_timeout_seconds: 3600
   ready_timeout_seconds: 300
   shutdown_timeout_seconds: 60
@@ -864,6 +880,7 @@ agent_service:
     problem: {}
     agent:
       artifact: null
+      entrypoint: null
       config: {}
       frontend_protocol: openai_chat_completions
     execution:
@@ -875,6 +892,9 @@ agent_service:
       reward_function: {}
     generation: {}
     lifecycle: null
+    trajectory_selection:
+      strategy: longest
+      config: {}
   enabled: false
 trainer:
   balance_batch: true

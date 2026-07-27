@@ -237,6 +237,7 @@ class _TrajectoryTensors:
     attention_mask: torch.Tensor
     input_ids: torch.Tensor
     response_logprobs: torch.Tensor | None
+    loss_weight: torch.Tensor | None
     routed_experts: torch.Tensor | None
     num_turns: int
     metrics: dict[str, Any]
@@ -328,6 +329,11 @@ class RolloutAdapter:
         configured_generation = _mapping(task_config.get("generation", {}), "agent_service.task.generation")
         assert configured_generation is not None
         generation.update(configured_generation)
+        trajectory_selection = _mapping(
+            task_config.get("trajectory_selection", {"strategy": "longest", "config": {}}),
+            "agent_service.task.trajectory_selection",
+        )
+        assert trajectory_selection is not None
 
         do_sample_by_default = _select(sampling_config, "do_sample", _select(rollout_config, "do_sample", True))
         if not bool(do_sample_by_default):
@@ -351,6 +357,7 @@ class RolloutAdapter:
             generation=generation,
             lifecycle=lifecycle,
             sample_fields=sample_fields,
+            trajectory_selection=trajectory_selection,
         )
 
     def submit_batch(self, batch: DataProto, config: Any = None) -> list[tuple[int, TaskId]]:
@@ -407,9 +414,18 @@ class RolloutAdapter:
             raise first_error
 
     def build_verl_dataproto(self, snapshots: Sequence[TaskSnapshot], input_items: Sequence[Any]) -> DataProto:
-        trajectories = [self._decode_snapshot(snapshot) for snapshot in snapshots]
-        if len(trajectories) != len(input_items):
-            raise AgentServiceProtocolError("Trajectory and input batch sizes do not match")
+        if len(snapshots) != len(input_items):
+            raise AgentServiceProtocolError("Task snapshots and input batch sizes do not match")
+        trajectories: list[_TrajectoryTensors] = []
+        expanded_snapshots: list[TaskSnapshot] = []
+        expanded_input_items: list[Any] = []
+        for snapshot, input_item in zip(snapshots, input_items, strict=True):
+            selected = self._decode_snapshot(snapshot)
+            trajectories.extend(selected)
+            expanded_snapshots.extend([snapshot] * len(selected))
+            expanded_input_items.extend([input_item] * len(selected))
+        if not trajectories:
+            raise AgentServiceProtocolError("Agent Service returned no selected training trajectories")
 
         prompts = torch.stack([trajectory.prompts for trajectory in trajectories])
         responses = torch.stack([trajectory.responses for trajectory in trajectories])
@@ -433,6 +449,12 @@ class RolloutAdapter:
                 raise AgentServiceProtocolError("response_logprobs must be present for either all or no trajectories")
             tensor_values["rollout_log_probs"] = torch.stack(response_logprobs)  # type: ignore[arg-type]
 
+        loss_weights = [trajectory.loss_weight for trajectory in trajectories]
+        if any(value is not None for value in loss_weights):
+            if not all(value is not None for value in loss_weights):
+                raise AgentServiceProtocolError("loss_weight must be present for either all or no trajectories")
+            tensor_values["loss_weight"] = torch.stack(loss_weights)  # type: ignore[arg-type]
+
         routed_experts = [trajectory.routed_experts for trajectory in trajectories]
         if any(value is not None for value in routed_experts):
             if not all(value is not None for value in routed_experts):
@@ -441,7 +463,7 @@ class RolloutAdapter:
 
         rewards = []
         reward_extra_infos = []
-        for snapshot in snapshots:
+        for snapshot in expanded_snapshots:
             reward = snapshot.final_reward
             if reward is None:
                 raise AgentServiceProtocolError(f"Succeeded Task {snapshot.task_id} has no scalar final reward")
@@ -463,9 +485,9 @@ class RolloutAdapter:
         tensor_values["rm_scores"] = rm_scores
 
         non_tensor_batch: dict[str, np.ndarray] = {}
-        input_keys = set().union(*(item.non_tensor_batch.keys() for item in input_items))
+        input_keys = set().union(*(item.non_tensor_batch.keys() for item in expanded_input_items))
         for key in input_keys:
-            non_tensor_batch[key] = _object_array([item.non_tensor_batch.get(key) for item in input_items])
+            non_tensor_batch[key] = _object_array([item.non_tensor_batch.get(key) for item in expanded_input_items])
         non_tensor_batch["__num_turns__"] = np.array(
             [trajectory.num_turns for trajectory in trajectories], dtype=np.int32
         )
@@ -487,7 +509,7 @@ class RolloutAdapter:
             },
         )
 
-    def _decode_snapshot(self, snapshot: TaskSnapshot) -> _TrajectoryTensors:
+    def _decode_snapshot(self, snapshot: TaskSnapshot) -> list[_TrajectoryTensors]:
         # V0 policy: any FAILED/CANCELLED Task aborts the training step. The RFC
         # leaves accept/drop/resubmit to the driver; a subclass that wants
         # partial batches or resubmission should override wait_batch instead.
@@ -497,15 +519,23 @@ class RolloutAdapter:
         trajectory = snapshot.trajectory
         if not isinstance(trajectory, Mapping):
             raise AgentServiceProtocolError(f"Succeeded Task {snapshot.task_id} has no trajectory object")
+        if isinstance(trajectory.get("selected_bundle"), Mapping):
+            trajectory = trajectory["selected_bundle"]
         if isinstance(trajectory.get("training_trajectory"), Mapping):
-            trajectory = trajectory["training_trajectory"]
+            linear_trajectories = [trajectory["training_trajectory"]]
         elif "trajectories" in trajectory:
             linear_trajectories = trajectory["trajectories"]
-            if not isinstance(linear_trajectories, list) or len(linear_trajectories) != 1:
+            if not isinstance(linear_trajectories, list) or not linear_trajectories:
                 raise AgentServiceProtocolError(
-                    "Built-in RolloutAdapter requires exactly one linear training trajectory per Task"
+                    "Selected trajectory bundle must contain at least one linear trajectory"
                 )
-            trajectory = linear_trajectories[0]
+        else:
+            linear_trajectories = [trajectory]
+        if any(not isinstance(item, Mapping) for item in linear_trajectories):
+            raise AgentServiceProtocolError("Every selected training trajectory must be a JSON object")
+        return [self._decode_trajectory(trajectory) for trajectory in linear_trajectories]
+
+    def _decode_trajectory(self, trajectory: Mapping[str, Any]) -> _TrajectoryTensors:
         if not isinstance(trajectory, Mapping):
             raise AgentServiceProtocolError("training trajectory must be a JSON object")
 
@@ -555,6 +585,19 @@ class RolloutAdapter:
             padded_logprobs = torch.zeros(response_length, dtype=torch.float32)
             padded_logprobs[: len(response_logprobs)] = torch.tensor(response_logprobs, dtype=torch.float32)
 
+        loss_weight = trajectory.get("loss_weight")
+        padded_loss_weight = None
+        if loss_weight is not None:
+            loss_weight = _plain(loss_weight)
+            if not isinstance(loss_weight, list) or len(loss_weight) != len(response_ids):
+                raise AgentServiceProtocolError("trajectory.loss_weight must contain one number per response token")
+            if any(not isinstance(value, int | float) or isinstance(value, bool) for value in loss_weight):
+                raise AgentServiceProtocolError("trajectory.loss_weight values must be numbers")
+            if any(value < 0 for value in loss_weight):
+                raise AgentServiceProtocolError("trajectory.loss_weight values must be non-negative")
+            padded_loss_weight = torch.zeros(response_length, dtype=torch.float32)
+            padded_loss_weight[: len(loss_weight)] = torch.tensor(loss_weight, dtype=torch.float32)
+
         padded_routed_experts = None
         routed_experts = trajectory.get("routed_experts")
         if routed_experts is not None:
@@ -586,6 +629,7 @@ class RolloutAdapter:
             attention_mask=attention_mask,
             input_ids=input_ids,
             response_logprobs=padded_logprobs,
+            loss_weight=padded_loss_weight,
             routed_experts=padded_routed_experts,
             num_turns=num_turns,
             metrics=metrics,

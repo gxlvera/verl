@@ -19,15 +19,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..client_sdk.models import _to_wire
+from ..execution_backend import LocalExecutionBackendConfig, LocalRuntimeKind
 
 SUPPORTED_FRONTEND_PROTOCOLS = frozenset(
     {
         "openai_chat_completions",
-        "openai_responses",
         "anthropic_messages",
     }
 )
-SUPPORTED_UPSTREAM_PROTOCOLS = SUPPORTED_FRONTEND_PROTOCOLS | {"generate"}
+SUPPORTED_UPSTREAM_PROTOCOLS = SUPPORTED_FRONTEND_PROTOCOLS | {"openai_responses", "generate"}
 
 
 @dataclass(frozen=True)
@@ -75,6 +75,7 @@ class AgentServiceStartupConfig:
         backend_kind = self.execution_backend.get("kind")
         if backend_kind != "local":
             raise ValueError("Agent Service V0 supports only execution_backend.kind='local'")
+        LocalExecutionBackendConfig.from_dict(self.execution_backend)
         for name in ("proxy", "admission", "default_lifecycle"):
             value = getattr(self, name)
             if value is not None and not isinstance(value, Mapping):
@@ -105,6 +106,7 @@ def validate_agent_service_config(config: Mapping[str, Any]) -> None:
     execution_backend = config.get("execution_backend")
     if not isinstance(execution_backend, Mapping) or execution_backend.get("kind") != "local":
         raise ValueError("Agent Service V0 requires agent_service.execution_backend.kind=local")
+    backend_config = LocalExecutionBackendConfig.from_dict(execution_backend)
 
     if not isinstance(config.get("upstream_protocol"), str) or not config["upstream_protocol"]:
         raise ValueError("agent_service.upstream_protocol must be a non-empty string")
@@ -113,9 +115,15 @@ def validate_agent_service_config(config: Mapping[str, Any]) -> None:
         supported = ", ".join(sorted(SUPPORTED_UPSTREAM_PROTOCOLS))
         raise ValueError(f"agent_service.upstream_protocol must be one of: {supported}")
 
-    max_in_flight = config.get("max_in_flight")
-    if max_in_flight is not None and (not isinstance(max_in_flight, int) or max_in_flight <= 0):
-        raise ValueError("agent_service.max_in_flight must be greater than zero or null")
+    admission = config.get("admission")
+    if not isinstance(admission, Mapping):
+        raise ValueError("agent_service.admission must be a mapping")
+    max_concurrent_tasks = admission.get("max_concurrent_tasks")
+    if not isinstance(max_concurrent_tasks, int) or isinstance(max_concurrent_tasks, bool) or max_concurrent_tasks <= 0:
+        raise ValueError("agent_service.admission.max_concurrent_tasks must be greater than zero")
+    max_queued_tasks = admission.get("max_queued_tasks")
+    if not isinstance(max_queued_tasks, int) or isinstance(max_queued_tasks, bool) or max_queued_tasks < 0:
+        raise ValueError("agent_service.admission.max_queued_tasks must be non-negative")
 
     for name in (
         "ready_timeout_seconds",
@@ -137,12 +145,27 @@ def validate_agent_service_config(config: Mapping[str, Any]) -> None:
         supported = ", ".join(sorted(SUPPORTED_FRONTEND_PROTOCOLS))
         raise ValueError(f"agent_service.task.agent.frontend_protocol must be one of: {supported}")
 
-    task_execution = task.get("execution")
-    command = task_execution.get("command") if isinstance(task_execution, Mapping) else None
-    if not isinstance(command, Sequence) or isinstance(command, str | bytes) or not command:
-        raise ValueError("agent_service.task.execution.command is required")
+    if backend_config.runtime_kind is LocalRuntimeKind.COROUTINE:
+        entrypoint = agent.get("entrypoint")
+        if not isinstance(entrypoint, str) or not entrypoint:
+            raise ValueError("agent_service.task.agent.entrypoint is required for coroutine runtime")
+    else:
+        task_execution = task.get("execution")
+        command = task_execution.get("command") if isinstance(task_execution, Mapping) else None
+        if not isinstance(command, Sequence) or isinstance(command, str | bytes) or not command:
+            raise ValueError("agent_service.task.execution.command is required for process runtime")
 
     reward = task.get("reward")
     reward_function = reward.get("reward_function") if isinstance(reward, Mapping) else None
     if not isinstance(reward_function, Mapping) or not reward_function:
         raise ValueError("agent_service.task.reward.reward_function is required")
+
+    trajectory_selection = task.get("trajectory_selection", {"strategy": "longest", "config": {}})
+    if not isinstance(trajectory_selection, Mapping):
+        raise ValueError("agent_service.task.trajectory_selection must be a mapping")
+    selection_strategy = trajectory_selection.get("strategy", "longest")
+    if not isinstance(selection_strategy, str) or not selection_strategy:
+        raise ValueError("agent_service.task.trajectory_selection.strategy must be a non-empty string")
+    selection_config = trajectory_selection.get("config", {})
+    if not isinstance(selection_config, Mapping):
+        raise ValueError("agent_service.task.trajectory_selection.config must be a mapping")

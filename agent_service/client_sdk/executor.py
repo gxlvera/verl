@@ -24,7 +24,6 @@ from .errors import (
     AgentServiceClosedError,
     AgentServiceProtocolError,
     AgentServiceTimeoutError,
-    MaxInFlightTasksError,
 )
 from .models import TaskId, TaskSnapshot, TaskSpec
 from .transport import TransportClient
@@ -42,19 +41,15 @@ class AgentExecutor:
         self,
         transport_client: TransportClient,
         *,
-        max_in_flight: int | None = None,
         wait_any_poll_timeout_seconds: float = 30.0,
         wait_any_max_results: int = 64,
     ) -> None:
-        if max_in_flight is not None and max_in_flight <= 0:
-            raise ValueError("max_in_flight must be greater than zero or null")
         if wait_any_poll_timeout_seconds <= 0:
             raise ValueError("wait_any_poll_timeout_seconds must be greater than zero")
         if wait_any_max_results <= 0:
             raise ValueError("wait_any_max_results must be greater than zero")
 
         self._transport_client = transport_client
-        self._max_in_flight = max_in_flight
         self._wait_any_poll_timeout_seconds = wait_any_poll_timeout_seconds
         self._wait_any_max_results = wait_any_max_results
         self._in_flight: set[TaskId] = set()
@@ -69,14 +64,11 @@ class AgentExecutor:
     def submit(self, task_spec: TaskSpec, idempotency_key: str | None = None) -> TaskId:
         """Submit one Task and immediately return its server-assigned ID.
 
-        max_in_flight is a hard local cap that raises instead of blocking: the
-        V0 driver submits a whole batch before draining it, so blocking here
-        would deadlock. Server-side admission remains the primary backpressure.
+        The Driver intentionally applies no local concurrency limit. The
+        Service Controller is the single owner of admission and backpressure.
         """
         with self._lock:
             self._ensure_open()
-            if self._max_in_flight is not None and len(self._in_flight) >= self._max_in_flight:
-                raise MaxInFlightTasksError(self._max_in_flight)
         task_id = self._transport_client.submit(task_spec, idempotency_key=idempotency_key)
         with self._lock:
             self._in_flight.add(task_id)

@@ -17,7 +17,8 @@ import sys
 import pytest
 from omegaconf import OmegaConf
 
-from agent_service.verl_adapter.runtime import VerlAgentServiceRuntime, _build_proxy_config
+from agent_service import AgentServiceStartupConfig, InferenceSpec
+from agent_service.verl_adapter.runtime import VerlAgentServiceRuntime, _build_proxy_config, _default_actor_num_cpus
 
 
 class _RemoteMethod:
@@ -111,22 +112,26 @@ class _Trainer:
 
 
 def _config(*, actor_options=None):
+    if actor_options is None:
+        actor_options = {"num_cpus": 2, "name": "agent-service-test"}
     return OmegaConf.create(
         {
             "agent_service": {
                 "ray_actor": {
                     "actor_class": "tests.ServiceActor",
-                    "actor_options": actor_options or {"num_cpus": 2, "name": "agent-service-test"},
+                    "actor_options": actor_options,
                 },
-                "execution_backend": {"kind": "local"},
+                "execution_backend": {
+                    "kind": "local",
+                    "runtime": {"kind": "coroutine", "worker_processes": 4},
+                },
                 "upstream_protocol": "openai_chat_completions",
                 "proxy": {"replicas": 2},
-                "admission": {"max_running_tasks": 8},
+                "admission": {"max_concurrent_tasks": 8},
                 "default_lifecycle": {"timeout_seconds": 300},
                 "ready_timeout_seconds": 12,
                 "rpc_timeout_seconds": 3,
                 "shutdown_timeout_seconds": 5,
-                "max_in_flight": None,
             },
             "actor_rollout_ref": {
                 "model": {
@@ -203,7 +208,10 @@ def test_runtime_owns_ray_actor_lifecycle(monkeypatch):
         "name": "agent-service-test",
     }
     assert fake_ray.startup_config == {
-        "execution_backend": {"kind": "local"},
+        "execution_backend": {
+            "kind": "local",
+            "runtime": {"kind": "coroutine", "worker_processes": 4},
+        },
         "inference": {
             "replica_endpoints": ["http://replica:8000"],
             "upstream_protocol": "openai_chat_completions",
@@ -215,7 +223,7 @@ def test_runtime_owns_ray_actor_lifecycle(monkeypatch):
                 "tokenizer_path": None,
             },
         },
-        "admission": {"max_running_tasks": 8},
+        "admission": {"max_concurrent_tasks": 8},
         "default_lifecycle": {"timeout_seconds": 300},
     }
 
@@ -238,3 +246,24 @@ def test_runtime_requires_start_before_getting_rollout_adapter():
 
     with pytest.raises(RuntimeError, match="must be started"):
         runtime.get_rollout_adapter(tokenizer=object())
+
+
+def test_default_actor_cpu_reservation_tracks_local_runtime_workers():
+    inference = InferenceSpec(
+        replica_endpoints=["http://replica:8000"],
+        upstream_protocol="openai_chat_completions",
+    )
+    coroutine = AgentServiceStartupConfig(
+        execution_backend={
+            "kind": "local",
+            "runtime": {"kind": "coroutine", "worker_processes": 4},
+        },
+        inference=inference,
+    )
+    process = AgentServiceStartupConfig(
+        execution_backend={"kind": "local", "runtime": {"kind": "process"}},
+        inference=inference,
+    )
+
+    assert _default_actor_num_cpus(coroutine) == 4
+    assert _default_actor_num_cpus(process) == 1

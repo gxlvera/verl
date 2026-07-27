@@ -20,7 +20,6 @@ from agent_service import (
     AgentExecutor,
     AgentServiceClosedError,
     AgentServiceProtocolError,
-    MaxInFlightTasksError,
     TaskId,
     TaskSnapshot,
     TaskSpec,
@@ -64,18 +63,17 @@ def _task_spec():
     return TaskSpec(problem={}, agent={}, execution={}, reward={}, generation={})
 
 
-def _executor(max_in_flight=None):
+def _executor():
     transport_client = _FakeTransportClient()
     executor = AgentExecutor(
         transport_client,
-        max_in_flight=max_in_flight,
         wait_any_poll_timeout_seconds=1,
     )
     return executor, transport_client
 
 
 def test_as_completed_yields_service_completion_order_and_releases_slots():
-    executor, transport_client = _executor(max_in_flight=2)
+    executor, transport_client = _executor()
     first = executor.submit(_task_spec())
     second = executor.submit(_task_spec())
     transport_client.wait_responses.extend(
@@ -104,18 +102,6 @@ def test_submit_future_is_an_optional_convenience_wrapper():
     )
 
     assert future.result(timeout=5).final_reward == 1.0
-
-
-def test_max_in_flight_is_enforced_until_terminal_snapshot_is_observed():
-    executor, transport_client = _executor(max_in_flight=1)
-    task_id = executor.submit(_task_spec())
-
-    with pytest.raises(MaxInFlightTasksError):
-        executor.submit(_task_spec())
-
-    transport_client.statuses[task_id] = TaskSnapshot(task_id=task_id, status=TaskStatus.SUCCEEDED)
-    assert executor.get_status(task_id).is_terminal
-    executor.submit(_task_spec())
 
 
 def test_wait_any_rejects_non_terminal_or_unrequested_snapshots():
