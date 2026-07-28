@@ -146,6 +146,55 @@ Therefore, its configured maximum context length is **262,144 tokens (256 Ki tok
 The historical SGLang logs independently confirm this value by rejecting requests over
 262,144 tokens.
 
+## Codex length configuration
+
+The baseline and patched eight-task Codex inference runs used the following effective
+limits:
+
+| Setting | Effective value | Scope and evidence |
+|---|---:|---|
+| Rollout max prompt length | 4,096 tokens | `result.json` `context_limits.max_prompt_tokens` |
+| Rollout max response length | 131,072 tokens | `result.json` `context_limits.max_response_tokens` |
+| SGLang model context | 262,144 tokens | No run-level override; Qwen3.5-4B checkpoint default |
+| Whole-episode response budget | 131,072 tokens | Codex task `max_total_tokens` |
+| Recipe per-turn cap | `null` | Codex task `max_tokens_per_turn` |
+| Codex Responses request cap | absent | No `max_output_tokens`, `max_tokens`, or `max_inference_token` |
+
+The 4,096-token value limits the initial dataset prompt passed into the rollout. Codex
+then adds its own instructions, tool schemas, and conversation history, so the tokenized
+Gateway request can exceed 4,096 tokens. The 131,072-token response limit is cumulative
+over the whole trajectory and contains both model output and tool responses.
+
+The prepared Codex GRPO training recipe has a different prompt allowance:
+
+| Training recipe setting | Configured value |
+|---|---:|
+| `ROLLOUT_MAX_PROMPT_LEN` | 32,000 tokens |
+| `ROLLOUT_MAX_RESPONSE_LEN` | 131,072 tokens |
+| `SGLANG_CONTEXT_LENGTH` | 262,144 tokens |
+
+These 32,000 / 131,072 / 262,144 values belong to
+`train_qwen3p5_4b_codex_grpo.sh`; the two eight-task inference runs used 4,096 /
+131,072 / model-default 262,144 instead.
+
+### Does Codex send a per-request inference-token limit?
+
+No. A live capture of Codex CLI 0.141.0 inspected both its initial Responses request and
+its next request after a tool result. Neither request contained `max_output_tokens`,
+`max_tokens`, or `max_inference_token`. `max_inference_token` is not the Responses API
+field name; the corresponding standard field would be `max_output_tokens`, which was
+also absent.
+
+When `max_output_tokens` is absent and the recipe has `max_tokens_per_turn=null`, Gateway
+sets each SGLang turn's `max_tokens` to the trajectory response budget remaining at that
+turn. The first turn can therefore have up to 131,072 response-buffer tokens available,
+and the allowance decreases as model output and tool responses consume the buffer.
+SGLang's remaining model-context space imposes an additional practical bound.
+
+This differs from Claude Code: Claude Code itself sends `max_tokens=32,000` on every
+captured Anthropic request, while the captured Codex CLI sends no analogous per-turn
+field.
+
 ## Responses API fix validation
 
 The patched Responses adapter emits both `output_text` and `function_call` output items
