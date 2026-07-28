@@ -153,6 +153,31 @@ tasks:
 - Reward=0 mean model tokens increased from the invalid baseline 70.9 to 59,462.6.
 - No Gateway, Codex, or Sandbox errors were found.
 
+### Patched-run cohort summary
+
+| Cohort | n | Mean turns | Mean total length | Total length sum | Mean response length | Response sum | Mean model tokens | Model-token sum | Mean backend generated |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| All | 8 | 288.1 | 106,290 | 850,322 | 97,004 | 776,028 | 57,210 | 457,677 | 57,210 |
+| Reward = 1 | 1 | 66.0 | 72,797 | 72,797 | 64,166 | 64,166 | 41,439 | 41,439 | 41,439 |
+| Reward = 0 | 7 | 319.9 | 111,075 | 777,525 | 101,695 | 711,862 | 59,463 | 416,238 | 59,463 |
+
+### Patched-run per-trajectory data
+
+| Index and task | Reward | Turns | Prompt length | Response length | Total length | Model tokens | Backend tokens | Text + tool turns | Rollbacks |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 · astropy-12907 | 1 | 66 | 8,631 | 64,166 | 72,797 | 41,439 | 41,439 | 62 | 0 |
+| 1 · astropy-13033 | 0 | 99 | 9,030 | 75,629 | 84,659 | 47,517 | 47,517 | 95 | 0 |
+| 2 · astropy-13236 | 0 | 268 | 8,780 | 91,149 | 99,929 | 39,098 | 39,098 | 264 | 0 |
+| 3 · astropy-13398 | 0 | 182 | 9,566 | 131,072 | 140,638 | 74,479 | 74,479 | 178 | 0 |
+| 4 · astropy-13453 | 0 | 373 | 10,681 | 93,030 | 103,711 | 46,203 | 46,203 | 369 | 0 |
+| 5 · astropy-13579 | 0 | 557 | 9,830 | 131,072 | 140,902 | 91,963 | 91,963 | 553 | 0 |
+| 6 · astropy-13977 | 0 | 75 | 9,225 | 58,838 | 68,063 | 22,567 | 22,567 | 71 | 0 |
+| 7 · astropy-14096 | 0 | 685 | 8,551 | 131,072 | 139,623 | 94,411 | 94,411 | 682 | 0 |
+
+Indices 3, 5, and 7 reached the exact 131,072-token cumulative response limit. Their
+model-token counts remained lower because tool responses consume response-buffer space
+but are correctly excluded from the model-token mask.
+
 The exact equality between retained model tokens and backend completion tokens, together
 with zero rollbacks, confirms that the Responses round-trip now preserves assistant
 thinking content and produces a valid training mask.
