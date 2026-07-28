@@ -110,18 +110,29 @@ output plus tool responses. It is not a per-request generation allowance.
 
 ### Per-request generation limit
 
-The recipe did not configure an independent `max_tokens_per_turn`. Gateway sends SGLang
-the minimum of:
+Claude Code itself adds `max_tokens=32,000` to each Anthropic model request. This
+per-turn field comes from Claude Code, not from the uni-agent recipe or Gateway. A live
+SWE-bench capture observed two identical Claude Code warm-up requests, and both carried:
 
-1. the request's `max_tokens`,
+```json
+{
+  "messages": [{"role": "user", "content": [{"type": "text", "text": "Warmup"}]}],
+  "max_tokens": 32000,
+  "stream": true
+}
+```
+
+The recipe still had `max_tokens_per_turn=null`: it did not add a second independent
+per-turn cap. Gateway honors Claude Code's request field and sends SGLang the minimum of:
+
+1. Claude Code's request `max_tokens` (32,000 in the captured current CLI),
 2. the remaining trajectory response budget, and
 3. the output space left in the model context.
 
-A capture of the current equivalent Claude Code 2.1.181 path sends
-`max_tokens=32,000` on each Anthropic request. The historical run did not persist raw
-request payloads, so 32,000 is supporting evidence rather than direct proof of the exact
-historical CLI value. The largest completion observed in the 499-task historical Gateway
-logs was 20,006 tokens.
+The historical 499-task run did not persist raw request payloads, so the captured 32,000
+value is strong current-path evidence rather than direct proof of the exact historical
+CLI value. The largest completion observed in the 499-task historical Gateway logs was
+20,006 tokens.
 
 ### Qwen3.5-4B context length
 
