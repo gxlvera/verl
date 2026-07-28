@@ -142,6 +142,7 @@
   4. 给reward，一般有两步，首先是判断这个task对不对，这个是会依赖环境的，比如依赖sandbox里目前的agent写的代码和其他文件状态；然后根据这个task对不对给reward，这一步有可能也要依赖环境（比如如果agent的代码没通过测试，那么是什么报错，是哪方面的问题，可能对应了不同的reward）。所以希望把最终reward的计算也拿给agent service做，反正agent service要返回一个最终的reward给训练。如何判断这个task答得对不对，是dataset里面有的判断逻辑。到那时根据task答得对不对，计算reward是算法定义的。需要把算法定义爹reward计算逻辑传给agentservice。
   5. 如何起agentservice，望哥说slime的话提交ray job的时候，有一个ray supervisor，然后把agent service作为一个角色加进去。看下verl这边怎么起？
   6. 虽然agent service部署不解耦，但是代码解耦，并且agent service模块化了，成为了一个自己的闭环，这样别的框架比如slime也能轻松接入。
+  7. 把 DataProto 到 Agent Service 数据协议的转换逻辑写到 RL dataset 里。
 
 7.12  codex comment，要确认的点
 
