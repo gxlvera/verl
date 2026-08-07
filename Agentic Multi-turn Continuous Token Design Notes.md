@@ -5,7 +5,7 @@
 Token-in-token-out (TITO) 的基本概念是：训练侧应该使用推理侧真实产生和看到的 token ids，而不是事后重新 tokenization。verl 目前已经具备最基础的 token-in-token-out 思路：它会保留上一轮累计的 token ids，并正确对齐loss mask。但在 agentic 多轮 rollout 中，涉及到多轮token的拼接。很多开源模型的 chat template 并不是简单 append-only 的；**如果 incremental token ids 的提取和边界拼接处理不严谨，会拼出错误的多轮 prompt。**如果只应对某个模型的tokenzier，那么其实可以通过特定方式来确保正确性，但我们希望能设计一套方案来泛化到不同的tokenzier上，并且尽量少地去做model-specific hardcode。可泛化的多轮TITO主要有四个容易踩坑的点：
 
 1. 多轮 Continuous Token不能重新 retokenize 当前 full messages，必须保留之前轮累计的真实 token ids。
-2. incremental non-assistant token ids 必须从合适的 synthetic context 中提取，不能简单 encode incremental messages。
+2. context incremental token ids 必须从合适的 synthetic context 中提取，不能简单 encode 整个 incremental messages。这里的 context 不再等价于 non-assistant：rollback 场景下，context 里也可能包含 harness 改写后的 assistant 内容。
 3. incremental ids 拼回旧 token ids 时，部分模型需要显式的边界处理。
 4. 构造完整 trajectory 后，需要 comparator 检查结构错误；可以容许 assistant 内容与 full chat template 的 canonical render有偏差，但不可以容许special token边界的偏差。
 
@@ -162,7 +162,7 @@ accumulated_token_ids = previous_prompt_ids + previous_completion_ids
 
 下一轮只能追加新的 incremental token ids，不能对整个 `full_messages` 重新 encode。在这一点上，verl 当前逻辑是对的：它保留旧 trajectory buffer，下一轮将 incremental ids append 到 `response_ids`。例如 gateway 里 prefix 命中后会 copy active buffer，然后追加 incremental ids，见 `verl/verl/agent/gateway/gateway.py:524-545`。问题在于后面两件事：**incremental token ids 怎么提取**，以及 **怎么 merge 到旧 token ids 上**。
 
-### 2. 怎么获得 incremental token ids
+### 2. 怎么做 context incremental encode
 
 message-level incremental 很容易得到：
 
@@ -170,7 +170,9 @@ message-level incremental 很容易得到：
 incremental_messages = new_messages[len(old_messages):]
 ```
 
-难点是：如何把这些 incremental messages encode 成“纯净的、应该追加到旧 token ids 后面”的 token ids。如果直接：
+难点是：如何把这些 incremental messages encode 成“纯净的、应该追加到旧 token ids 后面”的 token ids。这里统一称为 **context incremental encode**。context messages 通常来自 harness / environment，过去基本只包含 tool/user/system；但 rollback 场景下，harness 可能会改写上一轮 assistant，因此 context 里也可能包含 `role == "assistant"`。
+
+如果直接：
 
 ```python
 encode(apply_chat_template(incremental_messages, add_generation_prompt=True))
@@ -293,7 +295,48 @@ full_messages = base_messages + appended_messages
 
 ```
 
-这个例子说明：dummy assistant 的作用不是“随便垫一条 assistant”，而是在 synthetic context 里恢复真实 rollout 的前置状态：**assistant 刚刚发起了对应 tool call，现在才轮到 tool response**。这里还有一个小细节：构造 tool-response synthetic context 时不要顺手加 dummy user。比如 Qwen3 会根据“assistant 是否在最后一个真实 user 之后”“assistant 是否是最后一条消息”来决定是否插入或清理 `<think>...</think>`。如果 base 写成 `[_DUMMY_SYSTEM, _DUMMY_USER, dummy_assistant]`，`text_without` 里 dummy assistant 可能因为位于最后一个 user 之后而被插入空 thinking block；但 `text_with = base + tool_response` 后 assistant 又不再是最后一条，thinking block 被删掉，导致 `text_with.startswith(text_without)` 失败。这个设计的重点是：**不要求完整 conversation 的 chat template append-only （append-only是指，对msgs1+msgs2 apply chat template后的前缀完全等于只对msgs1 apply chat template），只要求 synthetic context 下的append-only即可，稳定切出当前 role 的 suffix即可。**
+这个例子说明：dummy assistant 的作用不是“随便垫一条 assistant”，而是在 synthetic context 里恢复真实 rollout 的前置状态：**assistant 刚刚发起了对应 tool call，现在才轮到 tool response**。
+
+#### 为什么 context incremental encode 要按 role 分组
+
+context incremental encode 不应该直接对整个 `incremental_messages` 做一次 delta encode，而应该按 role 分组后分别 encode，再把每个 group 的结果拼起来。例如：
+
+```python
+raw_messages = [system, user, assistant]
+updated_messages = [system, user, assistant_c, tool_response, user]
+
+keep_messages = [system, user]
+incremental_messages = [assistant_c, tool_response, user]
+```
+
+CT 会把 `incremental_messages` 分成：
+
+```python
+[assistant_c], [tool_response], [user]
+```
+
+然后分别对 assistant group、tool group、user group 做 delta encode，最后拼接 token ids。它不会直接对：
+
+```python
+[assistant_c, tool_response, user]
+```
+
+整体做一次 delta encode。
+
+这么做有三个原因。
+
+1. **避免丢失 thinking。** 如果直接 encode 整个 incremental context，且 assistant 后面还有 user，有些 chat template 会把这个历史 assistant 的 thinking 删除。例如 Qwen3 / GLM / MiniMax / Gemma 这类 template 会根据 assistant 是否位于最后一个 user 之后来保留或删除 thinking。一旦直接 encode 时 thinking 被删掉，后续再从 token ids 里恢复 thinking 会非常麻烦，而且也违背 TITO 要保留真实 runtime assistant token 的目标。
+
+2. **保证 append-only，从而干净地 diff 出 suffix。** 分组 encode 后，每个 role group 都可以选择最适合自己的 synthetic context：tool group 用带 tool call 的 dummy assistant，assistant/user/system group 用 synthetic system + synthetic user。这样每个 group 只需要保证自己的 synthetic context 是 append-only，就能稳定切出 suffix；不要求完整 conversation 或完整 incremental list 在 chat template 下全局 append-only。
+
+3. **避免复杂的 dummy assistant 适配。** 如果把 `tool + user` 放在一起整体 encode，由于 tool response 的存在，很多 chat template（例如 MiniMax）要求前面必须有 dummy assistant tool call，否则会直接报错或渲染错误。但一旦加了 dummy assistant，又会遇到另一个问题：单独 encode prefix 时 dummy assistant 可能被渲染出 think tag；整体 encode 时，由于后面出现 user，这个 dummy assistant 的 think tag 又可能被 template 删除。这样 `text_with.startswith(text_without)` 不成立，无法干净地 diff 出 tool token。不同 chat template 对 dummy assistant 的要求还不一样：MiniMax 需要 dummy assistant，Qwen 这类模板又很容易因为 dummy assistant 的位置触发 thinking 改写。如果整体 encode，就需要为不同模板构造不同的 dummy assistant，工程上会非常繁琐，也不稳定。
+
+分组 encode 的取舍如下：
+
+- 优点：既能保留 assistant thinking，又能用一套相对通用的 synthetic context / dummy assistant 方案覆盖不同 chat template。
+- 缺点：不同 group 在 merge 时，group boundary 上可能有轻微 token 拼接问题，例如 Gemma、GPT、DeepSeek 等模型可能需要补/删 turn separator 或 boundary token。但这个问题工程量很小：turn separator 通常就是上一条消息结尾的一小段 token，容易识别，也容易通过 model-specific patch 修正。
+
+因此，这个设计的重点是：**不要求完整 conversation 的 chat template append-only（append-only 是指，对 `msgs1 + msgs2` apply chat template 后的前缀完全等于只对 `msgs1` apply chat template），只要求每个 role group 的 synthetic context append-only，即可稳定切出当前 group 的 suffix。**
 
 ### 3. incremental ids 如何正确 merge 回 accumulated ids
 
@@ -362,11 +405,11 @@ incremental tool response starts with: <|observation|><tool_response>...
 
 ```python
 class ContinuousTokenBuilder:
-    def encode_environment_delta(...):
+    def encode_context_delta(...):
         ...
 
     def merge(prev_messages, next_messages, runtime_token_ids, tools=None):
-        delta = self.encode_environment_delta(...)
+        delta = self.encode_context_delta(...)
         return [*runtime_token_ids, *delta]
 ```
 
@@ -432,7 +475,7 @@ class RolloutTokenState:
 
 ```python
 class ContinuousTokenBuilder:
-    append_only_roles = {"tool"}
+    context_roles = {"tool", "user", "system", "assistant"}
 
     def render_chat(self, messages, *, add_generation_prompt, tools=None, tokenize=False):
         return tokenizer.apply_chat_template(
@@ -464,20 +507,20 @@ class ContinuousTokenBuilder:
 
     def encode_plain_turn(self, message, tools=None):
         return self.encode_render_delta(
-            [SYNTHETIC_SYSTEM],
+            [SYNTHETIC_SYSTEM, SYNTHETIC_USER],
             [message],
             tools=tools,
         )
 
-    def encode_environment_delta(self, prev_messages, next_messages, tools=None):
-        require_message_prefix(prev_messages, next_messages, append_only_roles=self.append_only_roles)
+    def encode_context_delta(self, prev_messages, next_messages, tools=None):
+        require_message_prefix(prev_messages, next_messages, append_only_roles=self.context_roles)
         new_tail = next_messages[len(prev_messages):]
 
         pieces = []
         for role, segment in group_consecutive_roles(new_tail):
             if role == "tool":
                 pieces.extend(self.encode_tool_observations(segment, tools=tools))
-            elif role in {"user", "system"}:
+            elif role in {"user", "system", "assistant"}:
                 pieces.extend(self.encode_plain_turn(segment[0], tools=tools))
 
         pieces.extend(self.encode_render_delta(
@@ -489,7 +532,7 @@ class ContinuousTokenBuilder:
         return pieces
 
     def merge(self, prev_messages, next_messages, runtime_token_ids, tools=None):
-        delta = self.encode_environment_delta(prev_messages, next_messages, tools=tools)
+        delta = self.encode_context_delta(prev_messages, next_messages, tools=tools)
         return [*runtime_token_ids, *delta]
 
 ```
@@ -499,7 +542,7 @@ class ContinuousTokenBuilder:
 ```python
 class Qwen3ContinuousTokenBuilder(ContinuousTokenBuilder):
     def merge(...):
-        delta = self.encode_environment_delta(...)
+        delta = self.encode_context_delta(...)
         prefix = list(runtime_token_ids)
         if prefix and prefix[-1] == im_end_id:
             prefix.append(newline_id)
@@ -509,7 +552,7 @@ class Qwen3ContinuousTokenBuilder(ContinuousTokenBuilder):
 ```python
 class GLM47ContinuousTokenBuilder(ContinuousTokenBuilder):
     def merge(...):
-        delta = self.encode_environment_delta(...)
+        delta = self.encode_context_delta(...)
         prefix = list(runtime_token_ids)
         if prefix and prefix[-1] in {user_id, observation_id}:
             prefix = prefix[:-1]
