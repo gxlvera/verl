@@ -1280,6 +1280,45 @@ class TestWiringVLFactory:
         assert isinstance(builder, Gemma4VLContinuousTokenBuilder)
         assert builder.supports_multimodal() is True
 
+    @pytest.mark.parametrize("model_type", ["qwen3_5", "qwen3_5_moe"])
+    def test_qwen35_unified_with_processor_upgrades_to_qwen3_vl(self, model_type):
+        """Qwen3.5 unified checkpoints use the Qwen3-VL builder when a VL processor is loaded."""
+        from verl.utils.tokenizer.continuous_token import QwenVLContinuousTokenBuilder
+        from verl.utils.tokenizer.continuous_token_wiring import create_continuous_token_builder
+
+        class MockTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                return [198] if text == "\n" else [1, 2, 3]
+
+            def convert_tokens_to_ids(self, token):
+                return {"<|im_end|>": 151645}.get(token, 0)
+
+        class MockProcessor:
+            image_processor = type("IP", (), {"merge_size": 2})()
+
+        builder = create_continuous_token_builder(
+            MockTokenizer(),
+            hf_model_type=model_type,
+            processor=MockProcessor(),
+        )
+
+        assert isinstance(builder, QwenVLContinuousTokenBuilder)
+        assert builder.supports_multimodal() is True
+
+    @pytest.mark.parametrize("model_type", ["qwen3_5", "qwen3_5_moe"])
+    def test_qwen35_unified_without_processor_stays_text(self, model_type):
+        """Qwen3.5 unified checkpoints retain the text builder without a VL processor."""
+        from verl.utils.tokenizer.continuous_token import QwenContinuousTokenBuilder
+        from verl.utils.tokenizer.continuous_token_wiring import create_continuous_token_builder
+
+        builder = create_continuous_token_builder(
+            _QwenBoundaryTokenizer(),
+            hf_model_type=model_type,
+        )
+
+        assert isinstance(builder, QwenContinuousTokenBuilder)
+        assert builder.supports_multimodal() is False
+
     def test_text_specific_family_with_processor_raises(self):
         """A recognized text-only family paired with a multimodal processor is a misconfiguration."""
         from verl.utils.tokenizer.continuous_token_wiring import create_continuous_token_builder
