@@ -357,11 +357,15 @@ class DeepSeekV4ContinuousTokenBuilder(ContinuousTokenBuilder):
         self,
         runtime_token_ids: list[int],
         appended_token_ids: list[int],
+        *,
+        previous_messages: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> MergeResult:
         prefix = list(runtime_token_ids)
         inserted_token_ids: list[int] = []
-        if appended_token_ids and prefix[-1:] != [self._eos_id]:
+        previous_role = previous_messages[-1].get("role") if previous_messages else None
+        # EOS closes an assistant turn; user/tool runs flow directly into the next assistant turn.
+        if appended_token_ids and previous_role == "assistant" and prefix[-1:] != [self._eos_id]:
             prefix.append(self._eos_id)
             inserted_token_ids.append(self._eos_id)
         return MergeResult(

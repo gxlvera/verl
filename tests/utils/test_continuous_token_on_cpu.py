@@ -1685,6 +1685,49 @@ def test_model_specific_builders_validate_special_token_id_shape():
         QwenContinuousTokenBuilder(_MultiTokenNewlineQwenTokenizer())
 
 
+@pytest.mark.parametrize("previous_role", ["user", "tool"])
+def test_deepseek_v4_only_inserts_eos_after_assistant(previous_role):
+    tokenizer = _DeepSeekToolAppendTokenizer()
+    builder = DeepSeekV4ContinuousTokenBuilder(tokenizer)
+
+    result = builder._merge_context_token_ids(
+        [10, 20],
+        [30, 40],
+        previous_messages=[{"role": previous_role, "content": "previous"}],
+    )
+
+    assert result.token_ids == [10, 20, 30, 40]
+    assert result.inserted_token_ids == []
+
+
+def test_deepseek_v4_inserts_missing_eos_after_assistant():
+    tokenizer = _DeepSeekToolAppendTokenizer()
+    builder = DeepSeekV4ContinuousTokenBuilder(tokenizer)
+
+    result = builder._merge_context_token_ids(
+        [10, 20],
+        [30, 40],
+        previous_messages=[{"role": "assistant", "content": "generated"}],
+    )
+
+    assert result.token_ids == [10, 20, tokenizer.eos_id, 30, 40]
+    assert result.inserted_token_ids == [tokenizer.eos_id]
+
+
+def test_deepseek_v4_does_not_duplicate_existing_assistant_eos():
+    tokenizer = _DeepSeekToolAppendTokenizer()
+    builder = DeepSeekV4ContinuousTokenBuilder(tokenizer)
+
+    result = builder._merge_context_token_ids(
+        [10, tokenizer.eos_id],
+        [30, 40],
+        previous_messages=[{"role": "assistant", "content": "generated"}],
+    )
+
+    assert result.token_ids == [10, tokenizer.eos_id, 30, 40]
+    assert result.inserted_token_ids == []
+
+
 def test_unknown_family_fails_during_resolution():
     with pytest.raises(ValueError, match="Unknown Continuous Token model_family"):
         create_continuous_token_builder(_DummyTokenizer(), model_family="missing_custom_family")
